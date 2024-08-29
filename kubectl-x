@@ -1,0 +1,120 @@
+#!/bin/sh 
+set -e
+
+LAST_POD_INFO="/tmp/kctl_last_pod"
+
+if [ $1 = "h" ] ; then
+	echo x kubectl extension should be used with get pod some_pod
+	echo   once fetched pod json will be cached so other kubectl x commands can render local copy and respond faster
+	echo h - for help
+	echo c - for container status
+	echo i - for init container status
+	echo ic - for init and container status
+	echo I - for images of all containers
+	echo C - for command and args
+        echo m - for metadata
+	echo q - for reporting last cached pod file
+	echo a - for annotations
+        echo A - for affinity
+        echo l - for labels
+	echo v - for volumes
+	echo cv - for container volumes
+	echo iv - for container volumes
+	echo kubectl x command pod_json_file will render specific json file
+	exit 1
+fi
+
+if [ $# -lt 4 ] ; then
+	if [ -e $LAST_POD_INFO ] ; then
+		OUT="$(cat $LAST_POD_INFO)"
+	else
+		if [ "$1" = "q" ] ; then
+			exit
+		fi
+		if [ $# -eq 2 ] ; then
+			if [ -e $2 ] ; then
+				OUT=$2
+			else
+				echo $2 file does not exist
+				exit 1
+			fi
+		fi
+		echo args seen $@, probably not enough arguments for this kctl extenstion and not info on last pod file $LAST_POD_INFO
+		exit 1
+	fi	
+else
+	RAW_OUT="/tmp/${3}_${5}_${7}_${8}.json"
+	kubectl $2 $3 $4 $5 $6 $7 $8 -o json > $RAW_OUT
+	RESOURCE_VERSION=$(jq -r '.metadata.resourceVersion' < $RAW_OUT)
+	OUT="${RAW_OUT}_${RESOURCE_VERSION}"
+	cp "$RAW_OUT" "$OUT"
+        echo $OUT > /tmp/kctl_last_pod
+fi	
+
+echo "### using $OUT file" 1>&2;
+
+if [ "$1" = "c" ] ; then
+	jq -r '.status.containerStatuses[]|"---\ncID: \(.containerID) \n name: \(.name) \n state: \(.state)"' < $OUT | sed 's|containerd://||g'
+
+#        ¦       image: 533267006666.dkr.ecr.us-west-1.amazonaws.com/cordial/core:fpm-r-20240820.us-west-1.7626162038-3adc25bf,
+#        ¦       imageID: 533267006666.dkr.ecr.us-west-1.amazonaws.com/cordial/core@sha256:567ac477fa3af9c9f3ab6d24e2c44dec10a6a75a7e98804dd076fcc3b6110f78,
+#        ¦       lastState: {},
+#        ¦       name: admin-ui,
+#        ¦       ready: true,
+#        ¦       restartCount: 0,
+#        ¦       started: true,
+fi
+
+if [ "$1" = "i" ] ; then
+	jq -r '.status.initContainerStatuses[]|"---\ncID: \(.containerID) \n name: \(.name) \n state: \(.state)"' < $OUT | sed 's|containerd://||g'
+	jq -r '.status|"------\nip: \(.podIP) \n podIPs: \(.podIPs)"' < $OUT 
+fi
+
+if [ "$1" = "ic" ] ; then
+	jq -r '.status.initContainerStatuses[]|"---\ncID: \(.containerID) \n name: \(.name) \n state: \(.state)"' < $OUT | sed 's|containerd://||g'
+    echo ---------
+	jq -r '.status.containerStatuses[]|"---\ncID: \(.containerID) \n name: \(.name) \n state: \(.state)"' < $OUT | sed 's|containerd://||g'
+fi
+
+if [ "$1" = "I" ] ; then
+	jq -r '.spec.containers[]|"---\nname: \(.name) \n image: \(.image)"' < $OUT
+    echo ---------
+	jq -r '.spec.initContainers[]|"---\nname: \(.name) \n image: \(.image)"' < $OUT
+fi
+
+if [ "$1" = "C" ] ; then
+	jq -r '.spec.containers[]|"---\nname: \(.name) \n command: \(.command)\n args \(.args)\n env: \(.env)"' < $OUT
+    echo ---------
+	jq -r '.spec.initContainers[]|"---\nname: \(.name) \n command: \(.command)\n args \(.args)\n env: \(.env)"' < $OUT
+fi
+
+if [ "$1" = "m" ] ; then
+	jq -r '.metadata|"---\nname: \(.name) \n namespace: \(.namespace)\n annotations \(.annotations)\n labels \(.labels)\n ownerReferences: \(.ownerReferences)"' < $OUT
+	jq -r '.spec|"\n nodeName: \(.nodeName)"' < $OUT
+fi
+
+if [ "$1" = "a" ] ; then
+	jq -r '.metadata.annotations' < $OUT
+fi
+
+if [ "$1" = "A" ] ; then
+	jq -r '.spec.affinity' < $OUT
+fi
+
+if [ "$1" = "l" ] ; then
+	jq -r '.metadata.labels' < $OUT
+fi
+
+if [ "$1" = "v" ] ; then
+	jq -r '.spec.volumes' < $OUT
+fi
+
+if [ "$1" = "cv" ] ; then
+	jq -r '.spec.containers[]|{name,volumeMounts}' < $OUT 
+fi
+
+if [ "$1" = "iv" ] ; then
+	jq -r '.spec.initContainers[]|{name,volumeMounts}' < $OUT
+fi
+
+
