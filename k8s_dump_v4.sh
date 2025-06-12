@@ -1,8 +1,4 @@
 #!/bin/bash
-
-UTILS="${HOME}/bin"
-PATH="$PATH:${UTILS}"
-
 set -e
 
 hash kubectl
@@ -20,15 +16,21 @@ else
         CONTEXT=$1
 fi
 
+DUMPDIR=${K8S_DUMP_DIR:-"K8S_DUMP"}
+
+# python script to split items list to single yaml/json documents
 TMPPY=$(mktemp)
 cat > "$TMPPY" <<PYTHON3
 #!/usr/bin/env python3
 import sys
 import json
-import yaml
 import os
+from importlib import util
 
-if len(sys.argv) > 1:
+yaml_spec = util.find_spec("yaml")
+yaml_found = yaml_spec is not None
+
+if len(sys.argv) == 2:
     data = json.load(open(sys.argv[1]))
 elif len(sys.argv) == 1:
     data = json.loads(sys.stdin.read())
@@ -45,9 +47,11 @@ for item in data["items"]:
         namespace = "."
         if not os.path.exists(kind):
             os.mkdir(kind)
-    f = open(namespace + "/" + kind + "/" + name + ".yaml", "a")
-    f.write(yaml.dump(item, sort_keys=False, default_flow_style=False))
-    f.close()
+    if yaml_found:
+        import yaml
+        f = open(namespace + "/" + kind + "/" + name + ".yaml", "a")
+        f.write(yaml.dump(item, sort_keys=False, default_flow_style=False))
+        f.close()
     f = open(namespace + "/" + kind + "/" + name + ".json", "a")
     f.write(json.dumps(item, sort_keys=True))
     f.close()
@@ -56,7 +60,7 @@ chmod 700 "$TMPPY"
 
 get_non_namespaced() {
   NONAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=false | awk '{ print $1 }' | sort | uniq )
-  echo "---------------------------------------"
+  echo "#--------------------------------------"
   mkdir NONAMESPACED
   pushd NONAMESPACED > /dev/null
   echo fetching non namespaced resources :
@@ -79,10 +83,10 @@ get_namespaced_resources() {
 
 get_namespaced() {
   NAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=true | awk '{ print $1 }' | sort | uniq )
-  echo "Namespaced :  $NAMESPACED"
+  echo
   mkdir NAMESPACED
   pushd NAMESPACED > /dev/null
-  echo "---------------------------------------"
+  echo "#--------------------------------------"
   echo fetching on namespaced resources:
   get_namespaced_resources "$NAMESPACED" &
   wait
@@ -90,16 +94,17 @@ get_namespaced() {
 }
 
 #echo "----------------------------------------"
-#echo 'not including following:'
-#kubectl api-resources --no-headers=true -o wide | grep -v -e get -e list
+#echo 'following will not be fetched as there is no get or list'
+#kubectl --context "${CONTEXT}" api-resources --no-headers=true -o wide | grep -v -e get -e list
 #echo "----------------------------------------"
 
 DATE=$(date +%F_%T)
-mkdir -p "K8S_DUMP/${CONTEXT}/${DATE}"
-pushd "K8S_DUMP/${CONTEXT}/${DATE}" > /dev/null
+mkdir -p "${DUMPDIR}/${CONTEXT}/${DATE}"
+pushd "${DUMPDIR}/${CONTEXT}/${DATE}" > /dev/null
 
 
 get_non_namespaced
 get_namespaced
 
+echo
 echo '# Completed'
