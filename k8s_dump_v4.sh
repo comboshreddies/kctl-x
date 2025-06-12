@@ -21,38 +21,38 @@ else
 fi
 
 TMPPY=$(mktemp)
-cat > $TMPPY <<PYTHON3
+cat > "$TMPPY" <<PYTHON3
 #!/usr/bin/env python3
 import sys
 import json
 import yaml
 import os
 
-if len(sys.argv) > 1 :
-   data=json.load(open(sys.argv[1]))
-elif len(sys.argv) == 1 :
-   data=json.loads(sys.stdin.read())
-for item in data['items'] :
-    name=item['metadata']['name']
-    kind=item['kind']
-    if 'namespace' in item['metadata']:
-        namespace=item['metadata']['namespace']
-        if not os.path.exists(namespace) :
-           os.mkdir(namespace)
-        if not os.path.exists(namespace + "/" + kind) :
-           os.mkdir(namespace + "/" + kind)
+if len(sys.argv) > 1:
+    data = json.load(open(sys.argv[1]))
+elif len(sys.argv) == 1:
+    data = json.loads(sys.stdin.read())
+for item in data["items"]:
+    name = item["metadata"]["name"]
+    kind = item["kind"]
+    if "namespace" in item["metadata"]:
+        namespace = item["metadata"]["namespace"]
+        if not os.path.exists(namespace):
+            os.mkdir(namespace)
+        if not os.path.exists(namespace + "/" + kind):
+            os.mkdir(namespace + "/" + kind)
     else:
-        namespace="."
-        if not os.path.exists(kind) :
-           os.mkdir(kind)
+        namespace = "."
+        if not os.path.exists(kind):
+            os.mkdir(kind)
     f = open(namespace + "/" + kind + "/" + name + ".yaml", "a")
     f.write(yaml.dump(item, sort_keys=False, default_flow_style=False))
     f.close()
     f = open(namespace + "/" + kind + "/" + name + ".json", "a")
-    f.write(json.dumps(item,sort_keys=True))
+    f.write(json.dumps(item, sort_keys=True))
     f.close()
 PYTHON3
-chmod 700 $TMPPY
+chmod 700 "$TMPPY"
 
 get_non_namespaced() {
   NONAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=false | awk '{ print $1 }' | sort | uniq )
@@ -62,8 +62,8 @@ get_non_namespaced() {
   echo fetching non namespaced resources :
   for RESOURCE in $NONAMESPACED ; do
         echo -n "${RESOURCE} "
-        kubectl --context "${CONTEXT}"  get $RESOURCE -o json > "${RESOURCE}".json
-        $TMPPY ${RESOURCE}.json &
+        kubectl --context "${CONTEXT}"  get "$RESOURCE" -o json > "${RESOURCE}.json"
+        "$TMPPY" "${RESOURCE}.json" &
   done
   popd > /dev/null
 }
@@ -71,15 +71,15 @@ get_non_namespaced() {
 get_namespaced_resources() {
   for RESOURCE in ${NAMESPACED} ; do
         echo -n "${RESOURCE} "
-        kubectl --context "${CONTEXT}"  get $RESOURCE -A -o json > ${RESOURCE}.json
-        $TMPPY ${RESOURCE}.json &
+        kubectl --context "${CONTEXT}"  get "$RESOURCE" -A -o json > "${RESOURCE}.json"
+        "$TMPPY" "${RESOURCE}.json" &
   done
   wait
 }
 
 get_namespaced() {
   NAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=true | awk '{ print $1 }' | sort | uniq )
-  echo Namespaced :  $NAMESPACED
+  echo "Namespaced :  $NAMESPACED"
   mkdir NAMESPACED
   pushd NAMESPACED > /dev/null
   echo "---------------------------------------"
