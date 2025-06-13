@@ -8,19 +8,10 @@ hash uniq
 hash awk
 hash chmod
 
-if [ $# -ne 1 ]; then
-        echo choose context as a first argument
-        kubectl config get-contexts
-        exit 1
-else
-        CONTEXT=$1
-fi
-
-DUMPDIR=${K8S_DUMP_DIR:-"K8S_DUMP"}
-
 # python script to split items list to single yaml/json documents
-TMPPY=$(mktemp)
-cat > "$TMPPY" <<PYTHON3
+create_tmp_python() {
+  TMPPY=$(mktemp)
+  cat > "$TMPPY" <<PYTHON3
 #!/usr/bin/env python3
 import sys
 import json
@@ -56,7 +47,8 @@ for item in data["items"]:
     f.write(json.dumps(item, sort_keys=True))
     f.close()
 PYTHON3
-chmod 700 "$TMPPY"
+  chmod 700 "$TMPPY"
+}
 
 get_non_namespaced() {
   NONAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=false | awk '{ print $1 }' | sort | uniq )
@@ -93,16 +85,32 @@ get_namespaced() {
   popd > /dev/null
 }
 
+
+if [ $# -ne 1 ]; then
+        echo choose context as a first argument
+        kubectl config get-contexts
+        exit 1
+else
+        CONTEXT=$1
+fi
+
 #echo "----------------------------------------"
 #echo 'following will not be fetched as there is no get or list'
 #kubectl --context "${CONTEXT}" api-resources --no-headers=true -o wide | grep -v -e get -e list
 #echo "----------------------------------------"
 
 DATE=$(date +%F_%T)
-mkdir -p "${DUMPDIR}/${CONTEXT}/${DATE}"
-pushd "${DUMPDIR}/${CONTEXT}/${DATE}" > /dev/null
+DUMPDIR=${K8S_DUMP_DIR:-"K8S_DUMP"}
+TS_DIR=${K8S_DUMP_TS_DIR:-"$DATE"}
+
+echo "#--------------------------------------"
+echo "# saving to ${DUMPDIR}/${CONTEXT}/${TS_DIR}"
+
+mkdir -p "${DUMPDIR}/${CONTEXT}/${TS_DIR}"
+pushd "${DUMPDIR}/${CONTEXT}/${TS_DIR}" > /dev/null
 
 
+create_tmp_python
 get_non_namespaced
 get_namespaced
 
