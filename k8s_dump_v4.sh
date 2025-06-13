@@ -38,7 +38,7 @@ for item in data["items"]:
         namespace = "."
         if not os.path.exists(kind):
             os.mkdir(kind)
-    if yaml_found and not os.getenv('K8S_DUMP_NO_YAML'):
+    if yaml_found and os.getenv('K8S_DUMP_YAML') != 'disable' :
         import yaml
         f = open(namespace + "/" + kind + "/" + name + ".yaml", "a")
         f.write(yaml.dump(item, sort_keys=False, default_flow_style=False))
