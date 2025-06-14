@@ -1,4 +1,16 @@
 #!/bin/bash
+#
+# environment params:
+# K8S_DUMP_YAML - if set to any value and if yaml python 
+#       module is available, dumps to yaml format along with json
+# KEEP_JSON_LIST - if set to any value lst.json files will not be removed
+#        those files keep a list of all objects of a kind
+# K8S_DUMP_TS_DIR - if set to any value overrides time stamp dir for 
+#        k8s object dump (usually K8S_DUMP/<YYYY-MM-DD_hh:mm:ss>/..)
+# K8S_DUMP_DIR - if set to any value overrides K8S_DUMP default
+#       relative directory for kubernetes dump
+#
+
 set -e
 
 hash kubectl
@@ -38,7 +50,7 @@ for item in data["items"]:
         namespace = "."
         if not os.path.exists(kind):
             os.mkdir(kind)
-    if yaml_found and os.getenv('K8S_DUMP_YAML') != 'disable' :
+    if yaml_found and os.getenv('K8S_DUMP_YAML'):
         import yaml
         f = open(namespace + "/" + kind + "/" + name + ".yaml", "a")
         f.write(yaml.dump(item, sort_keys=False, default_flow_style=False))
@@ -58,8 +70,11 @@ get_non_namespaced() {
   echo fetching non namespaced resources :
   for RESOURCE in $NONAMESPACED ; do
         echo -n "${RESOURCE} "
-        kubectl --context "${CONTEXT}"  get "$RESOURCE" -o json > "${RESOURCE}.json"
-        "$TMPPY" "${RESOURCE}.json" &
+        kubectl --context "${CONTEXT}"  get "$RESOURCE" -o json > "${RESOURCE}.lst.json"
+        "$TMPPY" "${RESOURCE}.lst.json" &
+        if [ ! "$KEEP_JSON_LIST" ] ; then
+               rm "${RESOURCE}.lst.json"
+        fi
   done
   popd > /dev/null
 }
@@ -67,8 +82,11 @@ get_non_namespaced() {
 get_namespaced_resources() {
   for RESOURCE in ${NAMESPACED} ; do
         echo -n "${RESOURCE} "
-        kubectl --context "${CONTEXT}"  get "$RESOURCE" -A -o json > "${RESOURCE}.json"
-        "$TMPPY" "${RESOURCE}.json" &
+        kubectl --context "${CONTEXT}"  get "$RESOURCE" -A -o json > "${RESOURCE}.lst.json"
+        "$TMPPY" "${RESOURCE}.lst.json" &
+        if [ ! "$KEEP_JSON_LIST" ] ; then
+               rm "${RESOURCE}.lst.json"
+        fi
   done
   wait
 }
@@ -100,8 +118,8 @@ fi
 #echo "----------------------------------------"
 
 DATE=$(date +%F_%T)
-DUMPDIR=${K8S_DUMP_DIR:-"K8S_DUMP"}
 TS_DIR=${K8S_DUMP_TS_DIR:-"$DATE"}
+DUMPDIR=${K8S_DUMP_DIR:-"K8S_DUMP"}
 
 echo "#--------------------------------------"
 echo "# saving to ${DUMPDIR}/${CONTEXT}/${TS_DIR}"
