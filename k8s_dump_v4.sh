@@ -66,10 +66,10 @@ get_non_namespaced() {
   NONAMESPACED=$(
     kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list \
       --namespaced=false | awk '{ print $1 }' | sort | uniq )
-  echo "#--------------------------------------"
   mkdir NONAMESPACED
   pushd NONAMESPACED > /dev/null
-  echo fetching non namespaced resources :
+  echo "#---- fetching non namespaced resources :"
+  echo -n "#---- "
   for RESOURCE in $NONAMESPACED ; do
     echo -n "${RESOURCE} "
     kubectl --context "${CONTEXT}" get "$RESOURCE" -o json > "${RESOURCE}.lst.json"
@@ -105,8 +105,8 @@ get_namespaced() {
   echo
   mkdir NAMESPACED
   pushd NAMESPACED > /dev/null
-  echo "#--------------------------------------"
-  echo fetching on namespaced resources:
+  echo "#---- fetching on namespaced resources:"
+  echo -n "#---- "
   get_namespaced_resources "$NAMESPACED" &
   wait
   popd > /dev/null
@@ -121,17 +121,17 @@ else
         CONTEXT=$1
 fi
 
-#echo "----------------------------------------"
-#echo 'following will not be fetched as there is no get or list'
+#echo "#----"
+#echo '# following will not be fetched as there is no get or list'
 #kubectl --context "${CONTEXT}" api-resources --no-headers=true -o wide | grep -v -e get -e list
-#echo "----------------------------------------"
+#echo "#----"
 
 DATE=$(date +%F_%T)
 TS_DIR=${K8S_DUMP_TS_DIR:-"$DATE"}
 DUMPDIR=${K8S_DUMP_DIR:-"K8S_DUMP"}
 
-echo "#--------------------------------------"
-echo "# saving to ${DUMPDIR}/${CONTEXT}/${TS_DIR}"
+echo "#---- Started : ${DATE}"
+echo "#---- saving to ${DUMPDIR}/${CONTEXT}/${TS_DIR}"
 
 mkdir -p "${DUMPDIR}/${CONTEXT}/${TS_DIR}"
 pushd "${DUMPDIR}/${CONTEXT}/${TS_DIR}" > /dev/null
@@ -141,5 +141,7 @@ create_tmp_python
 get_non_namespaced
 get_namespaced
 
+
+DATE=$(date +%F_%T)
 echo
-echo '# Completed'
+echo "#---- Completed: ${DATE}"
