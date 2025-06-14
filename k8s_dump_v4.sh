@@ -3,7 +3,7 @@
 # environment params:
 # K8S_DUMP_YAML - if set to any value and if yaml python 
 #       module is available, dumps to yaml format along with json
-# KEEP_JSON_LIST - if set to any value lst.json files will not be removed
+# K8S_DUMP_KEEP_JSON_LIST - if set to any value lst.json files will not be removed
 #        those files keep a list of all objects of a kind
 # K8S_DUMP_TS_DIR - if set to any value overrides time stamp dir for 
 #        k8s object dump (usually K8S_DUMP/<YYYY-MM-DD_hh:mm:ss>/..)
@@ -63,36 +63,45 @@ PYTHON3
 }
 
 get_non_namespaced() {
-  NONAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=false | awk '{ print $1 }' | sort | uniq )
+  NONAMESPACED=$(
+    kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list \
+      --namespaced=false | awk '{ print $1 }' | sort | uniq )
   echo "#--------------------------------------"
   mkdir NONAMESPACED
   pushd NONAMESPACED > /dev/null
   echo fetching non namespaced resources :
   for RESOURCE in $NONAMESPACED ; do
-        echo -n "${RESOURCE} "
-        kubectl --context "${CONTEXT}"  get "$RESOURCE" -o json > "${RESOURCE}.lst.json"
-        "$TMPPY" "${RESOURCE}.lst.json" &
-        if [ ! "$KEEP_JSON_LIST" ] ; then
-               rm "${RESOURCE}.lst.json"
-        fi
+    echo -n "${RESOURCE} "
+    kubectl --context "${CONTEXT}" get "$RESOURCE" -o json > "${RESOURCE}.lst.json"
+    "$TMPPY" "${RESOURCE}.lst.json" &
+  done
+  wait
+  for RESOURCE in $NONAMESPACED ; do
+    if [ ! "$K8S_DUMP_KEEP_JSON_LIST" ] ; then
+      rm "${RESOURCE}.lst.json"
+    fi
   done
   popd > /dev/null
 }
 
 get_namespaced_resources() {
   for RESOURCE in ${NAMESPACED} ; do
-        echo -n "${RESOURCE} "
-        kubectl --context "${CONTEXT}"  get "$RESOURCE" -A -o json > "${RESOURCE}.lst.json"
-        "$TMPPY" "${RESOURCE}.lst.json" &
-        if [ ! "$KEEP_JSON_LIST" ] ; then
-               rm "${RESOURCE}.lst.json"
-        fi
+    echo -n "${RESOURCE} "
+    kubectl --context "${CONTEXT}" get "$RESOURCE" -A -o json > "${RESOURCE}.lst.json"
+    "$TMPPY" "${RESOURCE}.lst.json" &
   done
   wait
+  for RESOURCE in ${NAMESPACED} ; do
+    if [ ! "$KEEP_JSON_LIST" ] ; then
+      rm "${RESOURCE}.lst.json"
+    fi
+  done
 }
 
 get_namespaced() {
-  NAMESPACED=$(kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list --namespaced=true | awk '{ print $1 }' | sort | uniq )
+  NAMESPACED=$(
+    kubectl --context "${CONTEXT}" api-resources --no-headers=true --verbs=get,list \
+      --namespaced=true | awk '{ print $1 }' | sort | uniq )
   echo
   mkdir NAMESPACED
   pushd NAMESPACED > /dev/null
@@ -105,7 +114,7 @@ get_namespaced() {
 
 
 if [ $# -ne 1 ]; then
-        echo choose context as a first argument
+        echo choose kubectl context as a first argument
         kubectl config get-contexts
         exit 1
 else
