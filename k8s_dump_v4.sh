@@ -56,7 +56,7 @@ for item in data["items"]:
         f.write(yaml.dump(item, sort_keys=False, default_flow_style=False))
         f.close()
     f = open(namespace + "/" + kind + "/" + name + ".json", "a")
-    f.write(json.dumps(item, sort_keys=True))
+    f.write(json.dumps(item, indent=4, sort_keys=True))
     f.close()
 PYTHON3
   chmod 700 "$TMPPY"
@@ -76,11 +76,6 @@ get_non_namespaced() {
     "$TMPPY" "${RESOURCE}.lst.json" &
   done
   wait
-  for RESOURCE in $NONAMESPACED ; do
-    if [ ! "$K8S_DUMP_KEEP_JSON_LIST" ] ; then
-      rm "${RESOURCE}.lst.json"
-    fi
-  done
   popd > /dev/null
 }
 
@@ -91,11 +86,6 @@ get_namespaced_resources() {
     "$TMPPY" "${RESOURCE}.lst.json" &
   done
   wait
-  for RESOURCE in ${NAMESPACED} ; do
-    if [ ! "$KEEP_JSON_LIST" ] ; then
-      rm "${RESOURCE}.lst.json"
-    fi
-  done
 }
 
 get_namespaced() {
@@ -141,6 +131,10 @@ create_tmp_python
 get_non_namespaced
 get_namespaced
 
+
+if [ ! "$KEEP_JSON_LIST" ] ; then
+    find . -name "*.lst.json" -exec rm {} \;
+fi
 
 DATE=$(date +%F_%T)
 echo

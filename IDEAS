@@ -1,0 +1,20 @@
+
+convert to python ? 
+------------------
+upload to s3
+import boto3
+
+s3 = boto3.resource('s3')
+BUCKET = "test"
+
+s3.Bucket(BUCKET).upload_file("your/local/file", "dump/file")
+-------------------
+
+1) run dump
+2) archive dump
+3) upload to s3
+4) remove files
+5) full-anchor json (improve array anchoring with index(name) (like 0/nginx for container) 
+
+
+
