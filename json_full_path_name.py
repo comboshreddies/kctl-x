@@ -15,9 +15,9 @@ def rec_descent(data,path):
             rec_descent(data[i],f'{step}"{i}"')
     elif isinstance(data,list):
         for i in range(len(data)):
-            if isinstance(data[i],list) and 'name' in data[i]:
+            if isinstance(data[i],dict) and 'name' in data[i]:
                name=data[i]['name']
-               rec_descent(data[i],f'{path}.{i}[{name}]')
+               rec_descent(data[i],f'{path}.{i}["{name}"]')
             else:
                rec_descent(data[i],f'{path}.{i}')
     else:

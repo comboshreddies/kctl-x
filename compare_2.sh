@@ -13,7 +13,7 @@ cp -a "$DIR1" "flat_${DIR1}"
 LIST=$(find "flat_${DIR1}" -type f -name "*.json")
 for i in $LIST; do
      echo $i
-     /Users/none/GIT/kctl-x/full_path_name.py "$i" > "$i.fjson"
+     json_full_path_name.py "$i" > "$i.full"
      rm "$i"
 done
 
@@ -21,7 +21,7 @@ cp -a "$DIR2" "flat_${DIR2}"
 LIST=$(find "flat_${DIR2}" -type f -name "*.json")
 for i in $LIST; do
      echo $i
-     /Users/none/GIT/kctl-x/full_path_name.py "$i" > "$i.fjson"
+     json_full_path_name.py "$i" > "$i.full"
      rm "$i"
 done
 
