@@ -8,7 +8,7 @@ pre=()
 post=()
 for i in $(seq 0 $#); do 
   elem="${arr[$i]}"
-  if [ "$elem" == "|" ] ; then
+  if [ "$elem" == "!" ] ; then
      pipeseen=true
      ofs=$((i+1))
      prenum=$i
@@ -35,7 +35,7 @@ xpost=()
 for i in $(seq $ofs $#) ; do 
   # echo $i
   elem="${arr[$i]}"
-  if [ "$elem" == "|" ] ; then
+  if [ "$elem" == "!" ] ; then
      dof=$(($i+1))
      len=$(($i-$ofs))
      # echo $i $elem $ofs $dof $len
