@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+import sys
+import os
+import subprocess
+
+if os.getenv('KUBECTL_PLUGIN_LEVEL'):
+  if os.getenv('KUBECTL_PLUGIN_LEVEL').isdigit():
+    os.environ['KUBECTL_PLUGIN_LEVEL'] = str(int(os.getenv('KUBECTL_PLUGIN_LEVEL')) + 1)
+  else:
+    os.environ['KUBECTL_PLUGIN_LEVEL'] = "1" 
+else:
+  os.environ['KUBECTL_PLUGIN_LEVEL'] = "1"
+
+DELIMITER="!"
+
+args = sys.argv
+argsLen = len(args)
+delimiterSeen = False
+secondDelimiterSeen = False
+pre = []
+post = []
+offset = 0
+prevNs = ""
+prevCtx = ""
+for i in range(argsLen):
+    elem = args[i]
+    if elem == DELIMITER :
+      delimiterSeen = True 
+      pre = args[0:i]
+      post = args[i+1:]
+      offset = i+1
+      break
+    if argsLen > i+1:
+      if elem == "-n" or elem == "--namespace":
+        prevNs = args[i+1]
+      if elem == "--context":
+        prevCtx = args[i+1] 
+
+if not pre:
+   xpre = args
+   pre = args
+   xpost = []
+
+secondPre = []
+secondPost = []
+if post:
+   for i in range(offset,argsLen):
+       elem = args[i]
+       if elem == DELIMITER:
+          secondDelimiterSeen = True
+          secondPre = args[offset:i]
+          secondPost = args[i+1:]
+          break
+   if not secondPre:
+       secondPre = post
+       secondPost = []
+
+if prevNs:
+   os.environ['PREV_NS'] = prevNs
+if prevCtx:
+   os.environ['PREV_CTX'] = prevCtx
+
+if secondPre and args[1] not in ['api-versions','plugin','version'] :
+   if delimiterSeen :
+      if "api-resources" in pre[1:]:
+         command = [ 'kubectl' ] + pre[1:] + [ "--verbs=get,list", "--no-headers" ] 
+         result = subprocess.run(command, capture_output=True, text=True, check=True)
+         command_output = result.stdout
+         lines = command_output.split('\n')
+         for i in lines:
+            if i:
+               fields = i.split()
+               name = fields[0]
+               nsed = fields[-2]
+               kind = fields[-1]
+               if secondPre[0] == "_":
+                   toCheck =  " ".join(["kubectl","ipy","{{cctx}}"]+secondPre[1:])
+               else:
+                   toCheck = " ".join(secondPre)
+               toExec = toCheck.replace("{{name}}",name)
+               toExec = toExec.replace("{{nsed}}",nsed)
+               toExec = toExec.replace("{{kind}}",kind)
+               if prevCtx:
+                  toExec = toExec.replace("{{ctx}}",prevCtx)
+                  toExec = toExec.replace("{{cctx}}","--context " + prevCtx)
+               if secondPost:
+                    toExec = toExec + " ! " + " ".join(secondPost)
+               os.system(toExec)
+      elif args[1] == "config" and args[2] == "get-contexts":
+         command = [ 'kubectl' ] + pre[1:] + [ "-o", "name", "--no-headers" ]
+         result = subprocess.run(command, capture_output=True, text=True, check=True)
+         command_output = result.stdout
+         lines = command_output.split('\n')
+         for i in lines:
+             if i:
+               name = i
+               if secondPre[0] == "_":
+                   toCheck =  " ".join(["kubectl","ipy","--context",name]+secondPre[1:])
+               else:
+                   toCheck = " ".join(secondPre)
+
+               toExec = toCheck.replace("{{name}}",name)
+               if secondPost:
+                    toExec = toExec + " ! " + " ".join(secondPost)
+               os.system(toExec)
+      elif "get" in pre[1:]: # TODO : IMPROVE parsing !!! get should be checked positioned 
+         command = [ 'kubectl' ] + pre[1:] + [ "-o", "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind", "--no-headers" ]
+         result = subprocess.run(command, capture_output=True, text=True, check=True)
+         command_output = result.stdout
+         lines = command_output.split('\n')
+         for i in lines:
+             if i:
+               fields = i.split()
+               name = fields[0]
+               ns = fields[1]
+               kind = fields[2]
+               reconstruct = []
+               if prevCtx :
+                   reconstruct += ["--context",prevCtx]
+               if ns :
+                   reconstruct += ["-n",ns]
+               else:
+                   reconstruct += ["-n",prevNs]
+               if secondPre[0] == "_":
+                   toCheck =  " ".join(["kubectl","ipy","{{cctx}}","{{cns}}"]+secondPre[1:])
+               else:
+                   toCheck = " ".join(secondPre)
+               toExec = toCheck.replace("{{name}}",name)
+               if ns != "<none>":
+                   toExec = toExec.replace("{{ns}}",ns)
+                   toExec = toExec.replace("{{cns}}","-n " + ns)
+               else:
+                   toExec = toExec.replace("{{ns}}","")
+                   toExec = toExec.replace("{{cns}}","")
+               toExec = toExec.replace("{{kind}}",kind)
+               if prevCtx:
+                  toExec = toExec.replace("{{ctx}}",prevCtx)
+                  toExec = toExec.replace("{{cctx}}","--context " + prevCtx)
+               if secondPost:
+                    toExec = toExec + " ! " + " ".join(secondPost)
+               os.system(toExec)
+      else:
+         pass
+else:
+  command = ["kubectl"] + args[1:]
+  os.system(' '.join(command))

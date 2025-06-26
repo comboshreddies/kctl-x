@@ -1,6 +1,6 @@
 #!/bin/bash -e
-#echo "$@"
-#READ $a
+KCTL_LEVEL=${KCTL_LEVEL:-0}
+export KCTL_LEVEL=$((KCTL_LEVEL+1))
 
 pipeseen=""
 arr=("$@")
@@ -17,6 +17,12 @@ for i in $(seq 0 $#); do
      postnum=$(($# - $i))
      break
   fi
+  if [ "$elem" == "-n" -o "$elem" == "--namespace" ] ; then
+     prev_ns="${arr[i+1]}"
+  fi
+  if [ "$elem" == "--context" ] ; then
+     prev_ctx="${arr[i+1]}"
+  fi
 done
 if [ ! "${pre[*]}" ] ; then 
    xpre=(${arr[*]})
@@ -25,69 +31,70 @@ if [ ! "${pre[*]}" ] ; then
 fi
 
 if [ "${post[*]}" ] ; then
-## echo ------
-## echo A ${#post[@]}
-## echo b $ofs
-## echo C "${post[*]}"
-## echo =======
-xpre=()
-xpost=()
-for i in $(seq $ofs $#) ; do 
-  # echo $i
-  elem="${arr[$i]}"
-  if [ "$elem" == "!" ] ; then
-     dof=$(($i+1))
-     len=$(($i-$ofs))
-     # echo $i $elem $ofs $dof $len
-     pipeseen2=true
-     # echo "${arr[@]:$ofs:$len}"
-     xpre=("${arr[@]:$ofs:$len}")
-     xpost=("${arr[@]:$ofs+$len+1:$#}")
-     break
+  xpre=()
+  xpost=()
+  for i in $(seq $ofs $#) ; do 
+    elem="${arr[$i]}"
+    if [ "$elem" == "!" ] ; then
+       dof=$(($i+1))
+       len=$(($i-$ofs))
+       pipeseen2=true
+       xpre=("${arr[@]:$ofs:$len}")
+       xpost=("${arr[@]:$ofs+$len+1:$#}")
+       break
+    fi
+  done
+
+  if [ ! "${xpre[*]}" ] ; then 
+    xpre=(${post[*]})
+    xpost=() 
   fi
-done
-
-## echo -- pre 1 "${pre[*]}"
-## echo -- post 2 "${post[*]}"
-## echo -- xpre 3 "${xpre[*]}"
-## echo -- xpost 4 "${xpost[*]}"
-## echo ==============
-if [ ! "${xpre[*]}" ] ; then 
-   xpre=(${post[*]})
-   xpost=() 
-fi
 fi
 
+export prev_ns
+export prev_ctx
 if [ "${xpre[*]}" ] ; then
-if [ "${arr[0]}" == "api-resources" ] ; then
-    LIST=$(kubectl ${pre[*]} --verbs=get,list --no-headers | awk '{ printf("%s_%s_%s\n",$1,$(NF-1),$NF)}')
+
+  if [ "$pipeseen" ]; then
+    RECONSTRUCT=""
+    if [ "$prev_ctx" ] ; then
+      RECONSTRUCT="${RECONSTRUCT} --context ${prev_ctx}"
+    fi
+    if [ "$prev_ns" ] ; then
+      RECONSTRUCT="${RECONSTRUCT} -n ${prev_ns}"
+    fi
+  
+    if [ "${arr[0]}" == "api-resources" ] ; then
+      LIST=$(kubectl ${pre[*]} --verbs=get,list --no-headers | awk '{ printf("%s_%s_%s\n",$1,$(NF-1),$NF)}')
+    else
+      LIST=$(kubectl ${pre[*]} -o jsonpath="{range .items[*]}{.kind}{'_'}{.metadata.namespace}{'_'}{.metadata.name}{'\n'}{end}")
+    fi
+  
+    #echo LIST "$LIST"
+    for i in $LIST; do
+      #echo $i
+      if [ "${arr[0]}" == "api-resources" ] ; then
+         resource=$(echo "$i"|awk -F_ '{print $1}')
+         nsed=$(echo "$i"|awk -F_ '{print $2}')
+         kind=$(echo "$i"|awk -F_ '{print $3}')
+         do=$(echo "${xpre[*]}"|sed "s/{{resource}}/$resource/g" | sed "s/{{kind}}/$kind/g" | sed "s/{{nsed}}/$nsed/g")
+      else
+         kind=$(echo "$i"|awk -F_ '{print $1}')
+         ns=$(echo "$i"|awk -F_ '{print $2}')
+         name=$(echo "$i"|awk -F_ '{print $3}')
+         do=$(echo "${xpre[*]}"|sed "s/{{name}}/$name/g" | sed "s/{{kind}}/$kind/g" | sed "s/{{ns}}/$ns/g")
+      fi
+      if [ "$xpost" ] ; then
+         eval "$do ! ${xpost[*]}"
+      else
+         eval "$do"
+      fi
+    done
+  else
+    #echo "kubectl ${arr[*]}"
+    eval "kubectl ${arr[*]}" 
+  fi
 else
-    LIST=$(kubectl ${pre[*]} -o jsonpath="{range .items[*]}{.kind}{'_'}{.metadata.namespace}{'_'}{.metadata.name}{'\n'}{end}")
+  echo ELSE EVAL
+  eval "${arr[*]}"
 fi
-
-for i in $LIST; do
-       #echo $i
-       if [ "${arr[0]}" == "api-resources" ] ; then
-          resource=$(echo "$i"|awk -F_ '{print $1}')
-          nsed=$(echo "$i"|awk -F_ '{print $2}')
-          kind=$(echo "$i"|awk -F_ '{print $3}')
-          do=$(echo "${xpre[*]}"|sed "s/{{resource}}/$resource/g" | sed "s/{{kind}}/$kind/g" | sed "s/{{nsed}}/$nsed/g")
-       else
-          kind=$(echo "$i"|awk -F_ '{print $1}')
-          ns=$(echo "$i"|awk -F_ '{print $2}')
-          name=$(echo "$i"|awk -F_ '{print $3}')
-          do=$(echo "${xpre[*]}"|sed "s/{{name}}/$name/g" | sed "s/{{kind}}/$kind/g" | sed "s/{{ns}}/$ns/g")
-       fi
-       if [ "$xpost" ] ; then
-          #echo "$do \\| ${xpost[*]}"
-          eval "$do \\| ${xpost[*]}"
-       else
-          #echo "$do"
-          eval "$do"
-       fi
-done
-else
-    eval "${arr[*]}"
-fi
-
-
