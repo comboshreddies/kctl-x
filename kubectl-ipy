@@ -11,7 +11,11 @@ if os.getenv('KUBECTL_PLUGIN_LEVEL'):
 else:
   os.environ['KUBECTL_PLUGIN_LEVEL'] = "1"
 
+
 DELIMITER="!"
+env_delimiter = os.getenv('KUBECTL_PLUGIN_IPY')
+if env_delimiter:
+   DELIMITER = env_delimiter
 
 args = sys.argv
 argsLen = len(args)
@@ -140,7 +144,11 @@ if secondPre and args[1] not in ['api-versions','plugin','version'] :
                     toExec = toExec + " ! " + " ".join(secondPost)
                os.system(toExec)
       else:
-         pass
+         command = ["kubectl"] + args[1:]
+         os.system(' '.join(command))
+   else:
+      command = ["kubectl"] + args[1:]
+      os.system(' '.join(command))
 else:
   command = ["kubectl"] + args[1:]
   os.system(' '.join(command))
