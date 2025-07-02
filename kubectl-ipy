@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # kubectl ipy config get-contexts ! _  api-resources   ! _ get {{kind}} -A   ! _ get {{kind}} {{name}} -o yaml
 # kubectl ipy config get-contexts -o name |kubectl ipy {{cctx}} api-resources|grep -e ^# -e pods| kubectl ipy {{cctx}} get {{kind}} -A | kubectl ipy {{cctx}} {{cns}} get {{kind}} {{name}}
+# kubectl ipy config get-contexts |kubectl ipy {{cctx}} api-resources|grep -e ^#ipy -e pods | kubectl ipy {{cctx}} get {{kind}} -A | kubectl ipy {{cctx}} {{cns}} get {{kind}} {{name}} -o yaml\;echo ---
+# kubectl ipy config get-contexts ! _ api-resources ! _ get {{kind}} -A ! _ get {{kind}} {{name}} -o yaml | sed 's/^\(apiVersion:.*\)$/---\n\1/g'
+# kubectl ipy config get-contexts |kubectl ipy _ api-resources | kubectl ipy _ get {{kind}} -A  | kubectl ipy _ get {{kind}} {{name}}
+# ipy config get-contexts | ipy _ api-resources | ipy _ get {{kind}} -A | ipy _ get {{kind}} {{name}} -o yaml\;echo ---
+#  _ config get-contexts | _ api-resources | _ get {{kind}} -A | _ get {{kind}} {{name}} -o yaml\;echo ---
+# _ config get-contexts | _ api-resources | _ get {{kind}} -A | _ get {{kind}} {{name}} -o yaml
 import sys
 import os
 import subprocess
@@ -135,6 +141,9 @@ while i<len(pre):
   if pre[i][0:2] == "{{" and pre[i][-2:] == "}}":
        i+=1
        continue 
+  if pre[i] == '_':
+       i+=1
+       continue
   modifiedPre.append(pre[i])
   if pre[i] == DELIMITER:
        break
@@ -266,7 +275,7 @@ if secondPre and modifiedPre[1] in allowed:
       os.system(' '.join(command))
 else:
   if args[1] in prohibited or args[1] in kctlOptions:
-      print(detect_output())
+      #print(detect_output())
       command = ["kubectl"] + args[1:]
       os.system(' '.join(command))
   elif modifiedPre[1] in allowed :
@@ -298,8 +307,16 @@ else:
                          name = fields[0]
                          ns = fields[1]
                          kind = fields[2]
-                         toCheck = " ".join(['kubectl'] + args[1:])
-                         toExec = toCheck.replace("{{name}}",name)
+                         if args[0].split('/')[-1] == '_':
+                              toCheck = " ".join(['kubectl', '_'] + args[1:])
+                         else:
+                              toCheck = " ".join(['kubectl'] + args[1:])
+                         #print(toCheck)
+                         #print(args)
+                         toExec = toCheck.replace(" _ "," {{cctx}} {{cns}} ") 
+                         toExec = toExec.replace("{{name}}",name)
+
+                         #print(toExec)
                          if in_ctx != "unknown":
                             toExec = toExec.replace("{{ctx}}",in_ctx)
                             toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
@@ -313,17 +330,23 @@ else:
                             toExec = toExec.replace("{{ns}}","")
                             toExec = toExec.replace("{{cns}}","")
                          toExec = toExec.replace("{{kind}}",kind)
+                         #print(toExec)
                          if detect_output() == 'pipe':
                             print(f"#ipy:ctx: {in_ctx}")
                             toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                          os.system(toExec)
+                         #print("E2 " + toExec)
                      if in_format == 'api-resources':
                          fields = line[:-1].split()
                          name = fields[0]
                          nsed = fields[-2]
                          kind = fields[-1]
-                         toCheck = " ".join(['kubectl'] + args[1:])
-                         toExec = toCheck.replace("{{nsed}}",nsed)
+                         if args[0].split('/')[-1] == '_':
+                              toCheck = " ".join(['kubectl', '_'] + args[1:])
+                         else:
+                              toCheck = " ".join(['kubectl'] + args[1:])
+                         toExec = toCheck.replace(" _ "," {{cctx}} ")
+                         toExec = toExec.replace("{{nsed}}",nsed)
                          if in_ctx != "unknown":
                             toExec = toExec.replace("{{ctx}}",in_ctx)
                             toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
@@ -337,8 +360,10 @@ else:
                          if detect_output() == 'pipe':
                             toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                          os.system(toExec)
+                         #print("E1")
          else:
-             command = ["kubectl"] + args[1:] + [ "-o", "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind", "--no-headers" ] 
+             command = ["kubectl"] + args[1:] + [ "-o", "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind", "--no-headers" ]
+             #print("E3 " + ' '.join(command))
              os.system(' '.join(command))
       if modifiedPre[1] == 'api-resources':
          if detect_output() == 'pipe':
@@ -370,8 +395,12 @@ else:
                          #os.system(toExec)
                      elif in_format == 'config_get-contexts':
                          print(f"#ipy:ctx: {line[:-1]}",flush=True)
-                         toCheck = " ".join(['kubectl'] + args[1:])
-                         toExec = toCheck.replace("{{ctx}}",line[:-1])
+                         if args[0].split('/')[-1] == '_':
+                              toCheck = " ".join(['kubectl', '_'] + args[1:])
+                         else:
+                              toCheck = " ".join(['kubectl'] + args[1:])
+                         toExec = toCheck.replace(" _ "," {{cctx}} ") 
+                         toExec = toExec.replace("{{ctx}}",line[:-1])
                          toExec = toExec.replace("{{cctx}}","--context " + line[:-1])
                          if detect_output() == 'pipe':
                             toExec = toExec + ' --verbs=get,list --no-headers '
