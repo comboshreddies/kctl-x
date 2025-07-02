@@ -1,0 +1,48 @@
+#!/bin/bash -e
+KCTL_LEVEL=${KCTL_LEVEL:-0}
+export KCTL_LEVEL=$((KCTL_LEVEL+1))
+
+#set -x
+
+if [ ! -d "${HOME}/.kctl-o" ] ; then
+    mkdir -p  "${HOME}/.kctl-o"
+fi
+
+if [ "$1" == "list" -o "$1" == "ls" ] ; then
+   ls "${HOME}/.kctl-o"
+   exit 0
+fi
+
+if [ "$1" == "describe" ] ; then
+   for i in $(ls "${HOME}/.kctl-o"|sort); do
+       echo -n $i :
+       cat "${HOME}/.kctl-o/${i}"
+       echo
+   done
+   exit 0
+fi
+
+
+if [ "$1" == "echo" -o "$1" == "cat" ] ; then
+   cat "${HOME}/.kctl-o/${2}"
+   exit 0
+fi
+
+if [ "$1" == "save" ] ; then
+    echo -n "${3}" > "${HOME}/.kctl-o/${2}"
+    echo "${3} saved"
+    echo "----"
+    cat "${HOME}/.kctl-o/${2}"
+    echo
+    echo "----"
+    exit 0
+fi
+
+if [ -f "${HOME}/.kctl-o/${1}" ]; then
+    eval "kubectl ${@:2:$#} -o $(cat ${HOME}/.kctl-o/${1})"
+else
+   eval "kubectl $@"
+fi
+
+
+

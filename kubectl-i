@@ -69,7 +69,7 @@ if [ "${xpre[*]}" ] ; then
     else
       LIST=$(kubectl ${pre[*]} -o jsonpath="{range .items[*]}{.kind}{'_'}{.metadata.namespace}{'_'}{.metadata.name}{'\n'}{end}")
     fi
-  
+ # -o jsonpath="{range .items[*].spec.containers[*]}{.name}{'\n'}{end}" 
     #echo LIST "$LIST"
     for i in $LIST; do
       #echo $i
