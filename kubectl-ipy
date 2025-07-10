@@ -33,7 +33,7 @@
 # _ config get-contexts | _ tks {{cctx}}w -n test-run -l app=nginx start " env" -X
 #
 # TODO pass labels on get, make kubectl extension lget/xget that passes  labels and other fields
-#
+# TODO sh pipe for example pipe grep -v nesto
 # # # # #
 # config get-contexts -> get
 # config get-context -> api-resources
@@ -199,7 +199,7 @@ while i<len(pre):
        break
   i+=1
 
-print(args,file=sys.stderr)
+#print(args,file=sys.stderr)
 if secondPre and modifiedPre[1] in allowed:
    if delimiterSeen :
       print(modifiedPre[1])
@@ -425,14 +425,14 @@ if secondPre and modifiedPre[1] in allowed:
       os.system(' '.join(command))
 else:
   if len(modifiedPre) > 1:
-    print('UP ELSE', modifiedPre[1])
+    #print('UP ELSE', modifiedPre[1])
     if modifiedPre[1] in prohibited or modifiedPre[1] in kctlOptions:
         #print("HERE",flush=True)
         #print(detect_output())
         command = ["kubectl"] + args[1:]
         os.system(' '.join(command))
     elif modifiedPre[1] in allowed :
-         print("HERE allowed")
+         #print("HERE allowed")
          if modifiedPre[1] == 'config' and modifiedPre[2] == 'get-contexts':
            if detect_output() == 'pipe':
                print("#ipy:input: config_get-contexts",flush=True)
@@ -653,6 +653,7 @@ else:
   
          if modifiedPre[1] in plugins :
             print("PLUGIN")
+            print(detect_input())
             if detect_input() == 'fifo':
                 in_format = 'unknown'
                 in_ctx = 'unknown'
@@ -669,6 +670,7 @@ else:
                         in_ctx = line[10:-1]
                     else:
                         if in_format == 'get':
+                            print("PLUGIN GET")
                             fields = line[:-1].split()
                             name = fields[0]
                             ns = fields[1]
@@ -749,12 +751,13 @@ else:
   
                         else: # in_format get
                             pass 
-            else: # input fifo
+            else: # input not fifo
+               print("NOT FIFO")
                command = ["kubectl"] + args[1:]
                os.system(' '.join(command))
                pass
          if modifiedPre[1] == 'get':
-           print("UP GET")
+           #print("UP GET")
            if detect_output() == 'pipe':
                print("#ipy:input: get",flush=True)
            if detect_input() == 'fifo':
