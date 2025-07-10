@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+PLUGIN_NAME="ipy"
 # kubectl ipy config get-contexts ! _  api-resources   ! _ get {{kind}} -A   ! _ get {{kind}} {{name}} -o yaml
 # kubectl ipy config get-contexts -o name |kubectl ipy {{cctx}} api-resources|grep -e ^# -e pods| kubectl ipy {{cctx}} get {{kind}} -A | kubectl ipy {{cctx}} {{cns}} get {{kind}} {{name}}
 # kubectl ipy config get-contexts |kubectl ipy {{cctx}} api-resources|grep -e ^#ipy -e pods | kubectl ipy {{cctx}} get {{kind}} -A | kubectl ipy {{cctx}} {{cns}} get {{kind}} {{name}} -o yaml\;echo ---
@@ -30,7 +31,7 @@
 #
 # _ -n test-run get pod -l app=nginx -A  | _ exec {{name}} -c nginx -- env \> {{name}}.env
 #
-# _ config get-contexts | _ tks {{cctx}}w -n test-run -l app=nginx start " env" -X
+# _ config get-contexts | _ tks {{cctx}} -n test-run -l app=nginx start " env" -X
 #
 # TODO pass labels on get, make kubectl extension lget/xget that passes  labels and other fields
 # TODO sh pipe for example pipe grep -v nesto
@@ -230,7 +231,7 @@ if secondPre and modifiedPre[1] in allowed:
                            for reg in secondPre[2:]:
                                if re.search(reg,line):
                                     if secondPost :
-                                        toCheck = " ".join(["kubectl","ipy"]+secondPost[1:secondPostLenDelimit])
+                                        toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:secondPostLenDelimit])
                                         secondPostUsed = True
                                     else:
                                         toCheck = " ".join(["echo","{{name}}","{{nsed}}","{{kind}}"])
@@ -241,7 +242,7 @@ if secondPre and modifiedPre[1] in allowed:
                                if re.search(reg,i):
                                     match = True
                            if not match:
-                               toCheck = " ".join(["kubectl","ipy"]+secondPost[1:secondPostLenDelimit])
+                               toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:secondPostLenDelimit])
                                secondPostUsed = True
                    elif secondPre[1] == 'sh':
                        print(secondPre)
@@ -252,10 +253,10 @@ if secondPre and modifiedPre[1] in allowed:
                        #TODO fix  _ config get-contexts ! _ api-resources ! _ sh echo {{nsed}} {{kind}} {{name}} ! _ get {{kind}} -A ---- does not work
                        # maybe os exec secondPre[2:] then continue with just secondPost
                        #os.system(" ".join(secondPre[2:]))
-                       #toCheck = " ".join(["kubectl","ipy"]+secondPost[1:]) 
+                       #toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:]) 
                        # no then sh/echo is not parsed !!!
                    else:      
-                       toCheck =  " ".join(["kubectl","ipy","{{cctx}}"]+secondPre[1:])
+                       toCheck =  " ".join(["kubectl",PLUGIN_NAME,"{{cctx}}"]+secondPre[1:])
                else:
                    toCheck = " ".join(secondPre)
                if not toCheck:
@@ -292,7 +293,7 @@ if secondPre and modifiedPre[1] in allowed:
              if line:
                name = line 
                if secondPre[0] == "_":
-                   toCheck =  " ".join(["kubectl","ipy","--context",name]+secondPre[1:])
+                   toCheck =  " ".join(["kubectl",PLUGIN_NAME,"--context",name]+secondPre[1:])
                else:
                    toCheck = " ".join(secondPre)
 
@@ -380,7 +381,7 @@ if secondPre and modifiedPre[1] in allowed:
                else:
                    reconstruct += ["-n",prevNs]
                if secondPre[0] == "_":
-                   toCheck =  " ".join(["kubectl","ipy","{{ckconfig}}","{{cctx}}","{{cns}}"]+secondPre[1:])
+                   toCheck =  " ".join(["kubectl",PLUGIN_NAME,"{{ckconfig}}","{{cctx}}","{{cns}}"]+secondPre[1:])
                else:
                    toCheck = " ".join(secondPre)
                print(toCheck)
@@ -435,7 +436,7 @@ else:
          #print("HERE allowed")
          if modifiedPre[1] == 'config' and modifiedPre[2] == 'get-contexts':
            if detect_output() == 'pipe':
-               print("#ipy:input: config_get-contexts",flush=True)
+               print(f"#{PLUGIN_NAME}:input: config_get-contexts",flush=True)
            if detect_input() ==  'pipe':
                pass
            else:
@@ -453,7 +454,7 @@ else:
                         prevLine = line
                         continue
 
-                    if line[0:5] == "#ipy:":
+                    if line[0:5] == f"#{PLUGIN_NAME}:":
                         print(line,end="",flush=True)
                     else:
                          if args[1] == '-':
@@ -481,11 +482,11 @@ else:
                     if line[-1] != '\n':
                         prevLine = line
                         continue
-                    if line[0:12] == "#ipy:input: ":
+                    if line[0:12] == f"#{PLUGIN_NAME}:input: ":
                         in_format = line[12:-1]
                         if detect_output() == 'pipe':
                             print(line,end="",flush=True)
-                    elif line[0:10] == "#ipy:ctx: ":
+                    elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
                         in_ctx = line[10:-1]
                         if detect_output() == 'pipe':
                             print(line,end="",flush=True)
@@ -541,7 +542,7 @@ else:
                                toExec = toExec.replace("{{cctx}}","")
                             #print(toExec)
                             # if detect_output() == 'pipe':
-                               #print(f"#ipy:ctx: {in_ctx}",flush=True)
+                               #print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                                #toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                             os.system(toExec)
                         elif in_format == 'api-resources':
@@ -565,7 +566,7 @@ else:
                            toExec = toExec.replace("{{kind}}",kind)
                            toExec = toExec.replace("{{name}}",name)
                            if in_ctx != 'unknown':
-                               print(f"#ipy:ctx: {in_ctx}",flush=True)
+                               print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                            if detect_output() == 'pipe':
                               toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                            print(toExec)
@@ -588,9 +589,9 @@ else:
                     if line[-1] != '\n':
                         prevLine = line
                         continue
-                    if line[0:12] == "#ipy:input: ":
+                    if line[0:12] == f"#{PLUGIN_NAME}:input: ":
                         in_format = line[12:-1]
-                    elif line[0:10] == "#ipy:ctx: ":
+                    elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
                         in_ctx = line[10:-1]
                     else:
                         if in_format == 'get':
@@ -623,7 +624,7 @@ else:
                             toExec = toExec.replace("{{kind}}",kind)
                             #print(toExec)
                             #if detect_output() == 'pipe':
-                            #   print(f"#ipy:ctx: {in_ctx}")
+                            #   print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
                             os.system(toExec)
                         elif in_format == 'config_get-contexts':
                             fields = line[:-1].split()
@@ -644,7 +645,7 @@ else:
                                toExec = toExec.replace("{{cctx}}","")
                             print(toExec)
                             # if detect_output() == 'pipe':
-                               #print(f"#ipy:ctx: {in_ctx}",flush=True)
+                               #print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                                #toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                             os.system(toExec)
     
@@ -664,9 +665,9 @@ else:
                     if line[-1] != '\n':
                         prevLine = line
                         continue
-                    if line[0:12] == "#ipy:input: ":
+                    if line[0:12] == f"#{PLUGIN_NAME}:input: ":
                         in_format = line[12:-1]
-                    elif line[0:10] == "#ipy:ctx: ":
+                    elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
                         in_ctx = line[10:-1]
                     else:
                         if in_format == 'get':
@@ -700,7 +701,7 @@ else:
                             toExec = toExec.replace("{{kind}}",kind)
                             #print(toExec)
                             #if detect_output() == 'pipe':
-                            #   print(f"#ipy:ctx: {in_ctx}")
+                            #   print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
                             os.system(toExec)
                         elif in_format == 'config_get-contexts':
                             fields = line[:-1].split()
@@ -722,7 +723,7 @@ else:
                                toExec = toExec.replace("{{cctx}}","")
                             #print(toExec)
                             # if detect_output() == 'pipe':
-                               #print(f"#ipy:ctx: {in_ctx}",flush=True)
+                               #print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                                #toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                             os.system(toExec)
                         elif in_format == 'api-resources':
@@ -742,7 +743,7 @@ else:
                            toExec = toExec.replace("{{kind}}",kind)
                            toExec = toExec.replace("{{name}}",name)
                            #if in_ctx != 'unknown':
-                           #    print(f"#ipy:ctx: {in_ctx}",flush=True)
+                           #    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                            #if detect_output() == 'pipe':
                            #   toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                            print(toExec)
@@ -759,7 +760,7 @@ else:
          if modifiedPre[1] == 'get':
            #print("UP GET")
            if detect_output() == 'pipe':
-               print("#ipy:input: get",flush=True)
+               print(f"#{PLUGIN_NAME}:input: get",flush=True)
            if detect_input() == 'fifo':
                in_format = 'unknown'
                in_ctx = 'unknown'
@@ -770,9 +771,9 @@ else:
                    if line[-1] != '\n':
                        prevLine = line
                        continue
-                   if line[0:12] == "#ipy:input: ":
+                   if line[0:12] == f"#{PLUGIN_NAME}:input: ":
                        in_format = line[12:-1]
-                   elif line[0:10] == "#ipy:ctx: ":
+                   elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
                        in_ctx = line[10:-1]
                    else:
                        if in_format == 'config_get-contexts':
@@ -792,7 +793,7 @@ else:
                               toExec = toExec.replace("{{ctx}}","")
                               toExec = toExec.replace("{{cctx}}","")
                            if detect_output() == 'pipe':
-                              print(f"#ipy:ctx: {in_ctx}",flush=True)
+                              print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                               toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                            os.system(toExec)
                        elif in_format == 'get':
@@ -825,7 +826,7 @@ else:
                            toExec = toExec.replace("{{kind}}",kind)
                            #print(toExec)
                            if detect_output() == 'pipe':
-                              print(f"#ipy:ctx: {in_ctx}")
+                              print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
                               toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                            os.system(toExec)
                            #print("E2 " + toExec)
@@ -849,7 +850,7 @@ else:
                            toExec = toExec.replace("{{kind}}",kind)
                            toExec = toExec.replace("{{name}}",name)
                            if in_ctx != 'unknown':
-                               print(f"#ipy:ctx: {in_ctx}",flush=True)
+                               print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
                            if detect_output() == 'pipe':
                               toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
                            #print(toExec)
@@ -866,7 +867,7 @@ else:
                os.system(' '.join(command))
          if modifiedPre[1] == 'api-resources':
            if detect_output() == 'pipe':
-               print("#ipy:input: api-resources",flush=True)
+               print(f"#{PLUGIN_NAME}:input: api-resources",flush=True)
            if detect_input() == 'fifo':
                in_format = 'unknown'
                in_ctx = 'unknown'
@@ -877,9 +878,9 @@ else:
                    if line[-1] != '\n':
                        prevLine = line
                        continue
-                   if line[0:12] == "#ipy:input: ":
+                   if line[0:12] == f"#{PLUGIN_NAME}:input: ":
                        in_format = line[12:-1]
-                   elif line[0:10] == "#ipy:ctx: ":
+                   elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
                        in_ctx = line[10:-1]
                    else:
                        if in_format == 'api-resources':
@@ -896,10 +897,10 @@ else:
                            #toExec = toCheck.replace("{{kind}}",kind)
                            #toExec = toCheck.replace("{{name}}",name)
                            #if ctx != 'unknown': 
-                           #    print(f"#ipy:ctx: {{args[1:]}}",flush=True)
+                           #    print(f"#{PLUGIN_NAME}:ctx: {{args[1:]}}",flush=True)
                            #os.system(toExec)
                        elif in_format == 'config_get-contexts':
-                           print(f"#ipy:ctx: {line[:-1]}",flush=True)
+                           print(f"#{PLUGIN_NAME}:ctx: {line[:-1]}",flush=True)
                            if args[0].split('/')[-1] == '_':
                                 toCheck = " ".join(['kubectl', '_'] + args[1:])
                            else:
@@ -919,7 +920,7 @@ else:
                os.system(' '.join(command))
     else:
         if detect_output() == 'pipe':
-            print("#ipy: unformatted",flush=True)
+            print("#{PLUGIN_NAME}: unformatted",flush=True)
         if detect_input() == 'pipe':
             pass
         else:
