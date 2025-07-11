@@ -1,7 +1,10 @@
 #!/bin/bash -e
 KCTL_LEVEL=${KCTL_LEVEL:-0}
 export KCTL_LEVEL=$((KCTL_LEVEL+1))
-
+# TODO set classes for kind of object being get (so for example there is ~/.kctl-o/pod/xx that is 
+# automatically selected if pod is used and ~/.kctl-o/svc/xx that is used if kind of get object is service
+# TODO set default command if no output type is specified
+# TODO move to python
 #set -x
 
 if [ ! -d "${HOME}/.kctl-o" ] ; then

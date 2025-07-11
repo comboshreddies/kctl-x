@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-PLUGIN_NAME="ipy"
+PLUGIN_NAME = "ipy"
 # kubectl ipy config get-contexts ! _  api-resources   ! _ get {{kind}} -A   ! _ get {{kind}} {{name}} -o yaml
 # kubectl ipy config get-contexts -o name |kubectl ipy {{cctx}} api-resources|grep -e ^# -e pods| kubectl ipy {{cctx}} get {{kind}} -A | kubectl ipy {{cctx}} {{cns}} get {{kind}} {{name}}
 # kubectl ipy config get-contexts |kubectl ipy {{cctx}} api-resources|grep -e ^#ipy -e pods | kubectl ipy {{cctx}} get {{kind}} -A | kubectl ipy {{cctx}} {{cns}} get {{kind}} {{name}} -o yaml\;echo ---
@@ -49,73 +49,80 @@ import signal
 from stat import S_ISFIFO
 import re
 
+
 def int_signal_handler(sig, frame):
-    print(f'Exit on Ctrl+C! Level {os.getenv('KUBECTL_PLUGIN_LEVEL')}')
-    os.kill(os.getppid(),signal.SIGTERM)
+    print(f"Exit on Ctrl+C! Level {os.getenv('KUBECTL_PLUGIN_LEVEL')}")
+    os.kill(os.getppid(), signal.SIGTERM)
     sys.exit(0)
 
 
 def signal_ignore(sig, frame):
     pass
 
+
 def term_signal_handler(sig, frame):
-    signal.signal(signal.SIGTERM,signal_ignore)
-    print(f'Exit on Term signal! Level {os.getenv('KUBECTL_PLUGIN_LEVEL')}')
-    if os.getenv('KUBECTL_PLUGIN_PIDS'):
-       print("terminating :",end="")
-       for i in os.getenv('KUBECTL_PLUGIN_PIDS').split(','):
-          print(f" {i}",end="")
-          os.kill(int(i),signal.SIGTERM)
+    signal.signal(signal.SIGTERM, signal_ignore)
+    print(f"Exit on Term signal! Level {os.getenv('KUBECTL_PLUGIN_LEVEL')}")
+    if os.getenv("KUBECTL_PLUGIN_PIDS"):
+        print("terminating :", end="")
+        for i in os.getenv("KUBECTL_PLUGIN_PIDS").split(","):
+            print(f" {i}", end="")
+            os.kill(int(i), signal.SIGTERM)
     sys.exit(0)
+
 
 def detect_input():
     if sys.stdin.isatty():
-        return 'terminal';
+        return "terminal"
     else:
         if S_ISFIFO(os.fstat(0).st_mode):
-            return 'fifo'; 
+            return "fifo"
         else:
-            return 'pipe' 
+            return "pipe"
+
 
 def detect_output():
     if sys.stdout.isatty():
-        return 'terminal';
+        return "terminal"
     else:
-        return 'pipe' 
+        return "pipe"
 
 
-def available_plugins() :
+def available_plugins():
     plugins = []
-    command = [ 'kubectl' , 'plugin' , 'list' ]
+    command = ["kubectl", "plugin", "list"]
     result = subprocess.run(command, capture_output=True, text=True, check=True)
     command_output = result.stdout
-    lines = command_output.split('\n')
+    lines = command_output.split("\n")
     for line in lines:
-         if '/kubectl-' in line:
-             offset = line.rindex('/kubectl-') + len('/kubectl-')
-             plugins.append(line[offset:])
+        if "/kubectl-" in line:
+            offset = line.rindex("/kubectl-") + len("/kubectl-")
+            plugins.append(line[offset:])
     return plugins
+
 
 signal.signal(signal.SIGINT, int_signal_handler)
 signal.signal(signal.SIGTERM, term_signal_handler)
 
-if os.getenv('KUBECTL_PLUGIN_LEVEL'):
-  if os.getenv('KUBECTL_PLUGIN_LEVEL').isdigit():
-    os.environ['KUBECTL_PLUGIN_LEVEL'] = str(int(os.getenv('KUBECTL_PLUGIN_LEVEL')) + 1)
-  else:
-    os.environ['KUBECTL_PLUGIN_LEVEL'] = "1" 
+if os.getenv("KUBECTL_PLUGIN_LEVEL"):
+    if os.getenv("KUBECTL_PLUGIN_LEVEL").isdigit():
+        os.environ["KUBECTL_PLUGIN_LEVEL"] = str(
+            int(os.getenv("KUBECTL_PLUGIN_LEVEL")) + 1
+        )
+    else:
+        os.environ["KUBECTL_PLUGIN_LEVEL"] = "1"
 else:
-  os.environ['KUBECTL_PLUGIN_LEVEL'] = "1"
+    os.environ["KUBECTL_PLUGIN_LEVEL"] = "1"
 
-if os.getenv('KUBECTL_PLUGIN_PIDS'):
-   os.environ['KUBECTL_PLUGIN_PIDS'] += f",{os.getpid()}"
+if os.getenv("KUBECTL_PLUGIN_PIDS"):
+    os.environ["KUBECTL_PLUGIN_PIDS"] += f",{os.getpid()}"
 else:
-   os.environ['KUBECTL_PLUGIN_PIDS'] = f"{os.getpid()}"
+    os.environ["KUBECTL_PLUGIN_PIDS"] = f"{os.getpid()}"
 
-DELIMITER="!"
-env_delimiter = os.getenv('KUBECTL_PLUGIN_IPY')
+DELIMITER = "!"
+env_delimiter = os.getenv("KUBECTL_PLUGIN_IPY")
 if env_delimiter:
-   DELIMITER = env_delimiter
+    DELIMITER = env_delimiter
 
 args = sys.argv
 argsLen = len(args)
@@ -129,805 +136,958 @@ prevCtx = ""
 prevKConfig = ""
 for i in range(argsLen):
     elem = args[i]
-    if elem == DELIMITER :
-      delimiterSeen = True 
-      pre = args[0:i]
-      post = args[i+1:]
-      offset = i+1
-      break
-    if argsLen > i+1:
-      if elem == "-n" or elem == "--namespace":
-        prevNs = args[i+1]
-      if elem == "--context":
-        prevCtx = args[i+1] 
-      if elem == "--kubeconfig=":
-        prevKConfig = args[i+1]
+    if elem == DELIMITER:
+        delimiterSeen = True
+        pre = args[0:i]
+        post = args[i + 1 :]
+        offset = i + 1
+        break
+    if argsLen > i + 1:
+        if elem == "-n" or elem == "--namespace":
+            prevNs = args[i + 1]
+        if elem == "--context":
+            prevCtx = args[i + 1]
+        if elem == "--kubeconfig=":
+            prevKConfig = args[i + 1]
 
 if not pre:
-   xpre = args
-   pre = args
-   xpost = []
+    xpre = args
+    pre = args
+    xpost = []
 
 secondPre = []
 secondPost = []
 if post:
-   for i in range(offset,argsLen):
-       elem = args[i]
-       if elem == DELIMITER:
-          secondDelimiterSeen = True
-          secondPre = args[offset:i]
-          secondPost = args[i+1:]
-          break
-   if not secondPre:
-       secondPre = post
-       secondPost = []
+    for i in range(offset, argsLen):
+        elem = args[i]
+        if elem == DELIMITER:
+            secondDelimiterSeen = True
+            secondPre = args[offset:i]
+            secondPost = args[i + 1 :]
+            break
+    if not secondPre:
+        secondPre = post
+        secondPost = []
 
 if prevNs:
-   os.environ['PREV_NS'] = prevNs
+    os.environ["PREV_NS"] = prevNs
 if prevCtx:
-   os.environ['PREV_CTX'] = prevCtx
+    os.environ["PREV_CTX"] = prevCtx
 if prevKConfig:
-   os.environ['PREV_KCONFIG'] = prevKconfig
+    os.environ["PREV_KCONFIG"] = prevKconfig
 
 # todo consider top
 # exec is ok
-prohibited=['api-versions','plugin','version','create','run','set','explain','edit','delete','rollout','scale','autoscale','certificate','cluster-info','top','cordon','uncordon','drain','taint','describe','logs','attach','port-forward','proxy','auth','debug','events','diff','apply','patch','replace','wait','kustomize','label','annotate','completion'] 
+prohibited = [
+    "api-versions",
+    "plugin",
+    "version",
+    "create",
+    "run",
+    "set",
+    "explain",
+    "edit",
+    "delete",
+    "rollout",
+    "scale",
+    "autoscale",
+    "certificate",
+    "cluster-info",
+    "top",
+    "cordon",
+    "uncordon",
+    "drain",
+    "taint",
+    "describe",
+    "logs",
+    "attach",
+    "port-forward",
+    "proxy",
+    "auth",
+    "debug",
+    "events",
+    "diff",
+    "apply",
+    "patch",
+    "replace",
+    "wait",
+    "kustomize",
+    "label",
+    "annotate",
+    "completion",
+]
 
 # all candidated for reconstruction, currently only -n , --context, --kubeconfig are passed
-kctlOptions=["--as","--as-group","--as-uid","--cache-dir","--certificate-authority","--client-certificate","--client-key","--cluster","--context","--disable-compression","--insecure-skip-tls-verify","--kubeconfig","--log-flush-frequency","--match-server-version","-n","--namespace","--password","--profile","--profile-output","--request-timeout","-s","--server","--tls-server-name","--token","--user","--username","-v","--vmodule","--warnings-as-errors"]
-kctl_allowed = ['api-resources','get','config','exec']
-internal = [ 'sh', '+', '-' ]
+kctlOptions = [
+    "--as",
+    "--as-group",
+    "--as-uid",
+    "--cache-dir",
+    "--certificate-authority",
+    "--client-certificate",
+    "--client-key",
+    "--cluster",
+    "--context",
+    "--disable-compression",
+    "--insecure-skip-tls-verify",
+    "--kubeconfig",
+    "--log-flush-frequency",
+    "--match-server-version",
+    "-n",
+    "--namespace",
+    "--password",
+    "--profile",
+    "--profile-output",
+    "--request-timeout",
+    "-s",
+    "--server",
+    "--tls-server-name",
+    "--token",
+    "--user",
+    "--username",
+    "-v",
+    "--vmodule",
+    "--warnings-as-errors",
+]
+kctl_allowed = ["api-resources", "get", "config", "exec"]
+internal = ["sh", "+", "-"]
 plugins = available_plugins()
 allowed = kctl_allowed + internal + plugins
 
 modifiedPre = []
 i = 0
-while i<len(pre):
-  if pre[i] in kctlOptions:
-       i+=2
-       continue 
-  if pre[i]+"=" in kctlOptions:
-       i+=1
-       continue
-  if pre[i][0:2] == "{{" and pre[i][-2:] == "}}":
-       i+=1
-       continue 
-  if pre[i] == '_':
-       i+=1
-       continue
-  modifiedPre.append(pre[i])
-  if pre[i] == DELIMITER:
-       break
-  i+=1
+while i < len(pre):
+    if pre[i] in kctlOptions:
+        i += 2
+        continue
+    if pre[i] + "=" in kctlOptions:
+        i += 1
+        continue
+    if pre[i][0:2] == "{{" and pre[i][-2:] == "}}":
+        i += 1
+        continue
+    if pre[i] == "_":
+        i += 1
+        continue
+    modifiedPre.append(pre[i])
+    if pre[i] == DELIMITER:
+        break
+    i += 1
 
-#print(args,file=sys.stderr)
 if secondPre and modifiedPre[1] in allowed:
-   if delimiterSeen :
-      print(modifiedPre[1])
-      secondPostLen=len(secondPost)
-      secondPostLenDelimit = secondPostLen
-      if DELIMITER in secondPost:
+    if delimiterSeen:
+        secondPostLen = len(secondPost)
+        secondPostLenDelimit = secondPostLen
+        if DELIMITER in secondPost:
             secondPostLenDelimit = secondPost.index(DELIMITER)
-      print(secondPre)
-      print(secondPost)
-      print(secondPostLen)
-      print(secondPostLenDelimit)
-      if "api-resources" in modifiedPre[1:]:
-         command = [ 'kubectl' ] + pre[1:] + [ "--verbs=get,list", "--no-headers" ] 
-         result = subprocess.run(command, capture_output=True, text=True, check=True)
-         command_output = result.stdout
-         lines = command_output.split('\n')
-         for line in lines: 
-            if line:
-               secondPostUsed = False
-               fields = line.split()
-               name = fields[0]
-               nsed = fields[-2]
-               kind = fields[-1]
-               toCheck = ""
-               if secondPre[0] == "_":
-                   if secondPre[1] in ['+','-']:
-                       if secondPre[1] == '+':
-                           for reg in secondPre[2:]:
-                               if re.search(reg,line):
-                                    if secondPost :
-                                        toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:secondPostLenDelimit])
-                                        secondPostUsed = True
-                                    else:
-                                        toCheck = " ".join(["echo","{{name}}","{{nsed}}","{{kind}}"])
-                                    break
-                       elif secondPre[1] == '-':
-                           match = False
-                           for reg in secondPre[2:]:
-                               if re.search(reg,i):
-                                    match = True
-                           if not match:
-                               toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:secondPostLenDelimit])
-                               secondPostUsed = True
-                   elif secondPre[1] == 'sh':
-                       print(secondPre)
-                       print(secondPost)
-                       print(secondPostLen)
-                       toCheck = " ".join(secondPre[2:secondPostLenDelimit])
-                       secondPostUsed = True
-                       #TODO fix  _ config get-contexts ! _ api-resources ! _ sh echo {{nsed}} {{kind}} {{name}} ! _ get {{kind}} -A ---- does not work
-                       # maybe os exec secondPre[2:] then continue with just secondPost
-                       #os.system(" ".join(secondPre[2:]))
-                       #toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:]) 
-                       # no then sh/echo is not parsed !!!
-                   else:      
-                       toCheck =  " ".join(["kubectl",PLUGIN_NAME,"{{cctx}}"]+secondPre[1:])
-               else:
-                   toCheck = " ".join(secondPre)
-               if not toCheck:
-                   continue
-               print(toCheck)
-               toExec = toCheck.replace("{{name}}",name)
-               toExec = toExec.replace("{{nsed}}",nsed)
-               toExec = toExec.replace("{{kind}}",kind)
-               if prevKConfig:
-                  toExec = toExec.replace("{{kconfig}}",prevKconfig)
-                  toExec = toExec.replace("{{ckconfig}}","--kubeconfig " + prevKconfig)
-               else:
-                  toExec = toExec.replace("{{kconfig}}","")
-                  toExec = toExec.replace("{{ckconfig}}","")
-               if prevCtx:
-                  toExec = toExec.replace("{{ctx}}",prevCtx)
-                  toExec = toExec.replace("{{cctx}}","--context " + prevCtx)
-               else:
-                  toExec = toExec.replace("{{ctx}}","")
-                  toExec = toExec.replace("{{cctx}}","")
-               print(secondPostUsed,secondPostLen,secondPostLenDelimit) 
-               if secondPostUsed and secondPostLen > secondPostLenDelimit:
-                    toExec = toExec + " ! " + " ".join(secondPost[secondPostLenDelimit+1:])
-               print(toExec)
-               exit_or_signal = os.system(toExec)
-               if exit_or_signal == 2:
-                 os.kill(os.getppid(),signal.SIGTERM) 
-      elif modifiedPre[1] == "config" and modifiedPre[2] == "get-contexts":
-         command = [ 'kubectl' ] + pre[1:] + [ "-o", "name", "--no-headers" ]
-         result = subprocess.run(command, capture_output=True, text=True, check=True)
-         command_output = result.stdout
-         lines = command_output.split('\n')
-         for line in lines:
-             if line:
-               name = line 
-               if secondPre[0] == "_":
-                   toCheck =  " ".join(["kubectl",PLUGIN_NAME,"--context",name]+secondPre[1:])
-               else:
-                   toCheck = " ".join(secondPre)
+        #print(secondPostLen,secondPostLenDelimit,secondPost)
+        if "api-resources" in modifiedPre[1:]:
+            command = ["kubectl"] + pre[1:] + ["--verbs=get,list", "--no-headers"]
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            command_output = result.stdout
+            lines = command_output.split("\n")
+            for line in lines:
+                if line:
+                    if line[:-1] == "No resources found":
+                        break
+                    secondPostUsed = False
+                    fields = line.split()
+                    name = fields[0]
+                    nsed = fields[-2]
+                    kind = fields[-1]
+                    toCheck = ""
+                    if secondPre[0] == "_":
+                         if secondPre[1] in ['+','-','?']:
+                            if secondPre[1] == '+':
+                                for reg in secondPre[2:]:
+                                    if re.search(reg,line):
+                                         if secondPost :
+                                             toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:secondPostLenDelimit])
+                                             secondPostUsed = True
+                                         else:
+                                             toCheck = " ".join(["echo","{{name}}","{{nsed}}","{{kind}}"])
+                                         break
+                            elif secondPre[1] == '-':
+                                match = False
+                                for reg in secondPre[2:]:
+                                    if re.search(reg,line):
+                                         match = True
+                                if not match:
+                                    toCheck = " ".join(["kubectl",PLUGIN_NAME]+secondPost[1:secondPostLenDelimit])
+                                    secondPostUsed = True
+                            elif secondPre[1] == '?':
+                                 # TODO 
+                                 pass            
+                         elif secondPre[1] == 'sh':
+                            #print("SHELL")
+                            #print(secondPre)
+                            #print(secondPost)
+                            #print(secondPostLen)
+                            if not secondPostLen:
+                                toCheck = " ".join(secondPre[2:])
+                            else:
+                                # TODO
+                                print("Second POST ",secondPost)
+                                toCheck = " ".join(secondPre[2:secondPostLenDelimit])
+                                secondPostUsed = True
+                            #TODO fix  _ config get-contexts ! _ api-resources ! _ sh echo {{nsed}} {{kind}} {{name}} ! _ get {{kind}} -A ---- does not work
+                         else:
+                            toCheck = " ".join(["kubectl", PLUGIN_NAME, "{{cctx}}"] + secondPre[1:])
+                    else:
+                        toCheck = " ".join(secondPre)
+                    if not toCheck:
+                        continue
+                    #print("TO CHECK ",toCheck)
+                    toExec = toCheck.replace("{{name}}", name)
+                    toExec = toExec.replace("{{nsed}}", nsed)
+                    toExec = toExec.replace("{{kind}}", kind)
+                    if prevKConfig:
+                        toExec = toExec.replace("{{kconfig}}", prevKconfig)
+                        toExec = toExec.replace(
+                            "{{ckconfig}}", "--kubeconfig " + prevKconfig
+                        )
+                    else:
+                        toExec = toExec.replace("{{kconfig}}", "")
+                        toExec = toExec.replace("{{ckconfig}}", "")
+                    if prevCtx:
+                        toExec = toExec.replace("{{ctx}}", prevCtx)
+                        toExec = toExec.replace("{{cctx}}", "--context " + prevCtx)
+                    else:
+                        toExec = toExec.replace("{{ctx}}", "")
+                        toExec = toExec.replace("{{cctx}}", "")
+                    #print(
+                    #    secondPostUsed, secondPostLen, secondPostLenDelimit, secondPost
+                    #)
+                    if secondPost :
+                        if not secondPostUsed and secondPostLen >= secondPostLenDelimit:
+                            toExec = toExec + " ! " + " ".join(secondPost)
+                        if secondPostUsed and secondPostLen > secondPostLenDelimit:
+                            #print(toExec)
+                            #print(secondPost)
+                            #print(secondPostLen, secondPostLenDelimit)
+                            toExec = toExec + " " +  " ".join(secondPost[secondPostLenDelimit:])
+                    #print(toExec)
+                    exit_or_signal = os.system(toExec)
+                    if exit_or_signal == 2:
+                        os.kill(os.getppid(), signal.SIGTERM)
+        elif modifiedPre[1] == "config" and modifiedPre[2] == "get-contexts":
+            command = ["kubectl"] + pre[1:] + ["-o", "name", "--no-headers"]
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            command_output = result.stdout
+            lines = command_output.split("\n")
+            for line in lines:
+                if line:
+                    name = line
+                    if secondPre[0] == "_":
+                        toCheck = " ".join(
+                            ["kubectl", PLUGIN_NAME, "--context", name] + secondPre[1:]
+                        )
+                    else:
+                        toCheck = " ".join(secondPre)
 
-               toExec = toCheck.replace("{{name}}",name)
-               if prevKConfig:
-                  toExec = toExec.replace("{{kconfig}}",prevKconfig)
-                  toExec = toExec.replace("{{ckconfig}}","--kubeconfig " + prevKconfig)
-               else:
-                  toExec = toExec.replace("{{kconfig}}","")
-                  toExec = toExec.replace("{{ckconfig}}","")
-               toExec = toExec.replace("{{ctx}}",name)
-               toExec = toExec.replace("{{cctx}}",f" --context {name}")
-               if secondPost:
-                    toExec = toExec + " ! " + " ".join(secondPost)
-               #print(f"# {toExec}")
-               exit_or_signal = os.system(toExec)
-               if exit_or_signal == 2:
-                 os.kill(os.getppid(),signal.SIGTERM) 
-      elif "exec" == modifiedPre[1]: 
-         command = [ 'kubectl' ] + pre[1:] + [ "-o", "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind", "--no-headers" ]
-         result = subprocess.run(command, capture_output=True, text=True, check=True)
-         command_output = result.stdout
-         lines = command_output.split('\n')
-         for line in lines:
-             if line:
-               fields = line.split()
-               name = fields[0]
-               ns = fields[1]
-               kind = fields[2]
-               reconstruct = []
-               if prevCtx :
-                   reconstruct += ["--context",prevCtx]
-               if ns :
-                   reconstruct += ["-n",ns]
-               else:
-                   reconstruct += ["-n",prevNs]
-               if secondPre[0] == "_":
-                   toCheck =  " ".join(["kubectl""{{ckconfig}}","{{cctx}}","{{cns}}"]+secondPre[1:])
-               else:
-                   toCheck = " ".join(secondPre)
-               toExec = toCheck.replace("{{name}}",name)
-               if ns != "<none>":
-                   toExec = toExec.replace("{{ns}}",ns)
-                   toExec = toExec.replace("{{cns}}","-n " + ns)
-               else:
-                   toExec = toExec.replace("{{ns}}","")
-                   toExec = toExec.replace("{{cns}}","")
-               toExec = toExec.replace("{{kind}}",kind)
-               if prevKConfig:
-                  toExec = toExec.replace("{{kconfig}}",prevKconfig)
-                  toExec = toExec.replace("{{ckconfig}}","--kubeconfig " + prevKconfig)
-               else:
-                  toExec = toExec.replace("{{kconfig}}","")
-                  toExec = toExec.replace("{{ckconfig}}","")
-               if prevCtx:
-                  toExec = toExec.replace("{{ctx}}",prevCtx)
-                  toExec = toExec.replace("{{cctx}}","--context " + prevCtx)
-               else:
-                  toExec = toExec.replace("{{ctx}}","")
-                  toExec = toExec.replace("{{cctx}}","")
-               if secondPost:
-                    toExec = toExec + " ! " + " ".join(secondPost)
-               #print(f"# {toExec}")
-               exit_or_signal = os.system(toExec)
-               if exit_or_signal == 2:
-                 os.kill(os.getppid(),signal.SIGTERM) 
-      elif "get" == modifiedPre[1]:
-         print("GET")
-         command = [ 'kubectl' ] + pre[1:] + [ "-o", "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind", "--no-headers" ]
-         result = subprocess.run(command, capture_output=True, text=True, check=True)
-         command_output = result.stdout
-         lines = command_output.split('\n')
-         for line in lines:
-             print(line)
-             if line:
-               fields = line.split()
-               name = fields[0]
-               ns = fields[1]
-               kind = fields[2]
-               reconstruct = []
-               if prevCtx :
-                   reconstruct += ["--context",prevCtx]
-               if ns :
-                   reconstruct += ["-n",ns]
-               else:
-                   reconstruct += ["-n",prevNs]
-               if secondPre[0] == "_":
-                   toCheck =  " ".join(["kubectl",PLUGIN_NAME,"{{ckconfig}}","{{cctx}}","{{cns}}"]+secondPre[1:])
-               else:
-                   toCheck = " ".join(secondPre)
-               print(toCheck)
-               toExec = toCheck.replace("{{name}}",name)
-               if ns != "<none>":
-                   toExec = toExec.replace("{{ns}}",ns)
-                   toExec = toExec.replace("{{cns}}","-n " + ns)
-               else:
-                   toExec = toExec.replace("{{ns}}","")
-                   toExec = toExec.replace("{{cns}}","")
-               toExec = toExec.replace("{{kind}}",kind)
-               if prevKConfig:
-                  toExec = toExec.replace("{{kconfig}}",prevKconfig)
-                  toExec = toExec.replace("{{ckconfig}}","--kubeconfig " + prevKconfig)
-               else:
-                  toExec = toExec.replace("{{kconfig}}","")
-                  toExec = toExec.replace("{{ckconfig}}","")
-               if prevCtx:
-                  toExec = toExec.replace("{{ctx}}",prevCtx)
-                  toExec = toExec.replace("{{cctx}}","--context " + prevCtx)
-               else:
-                  toExec = toExec.replace("{{ctx}}","")
-                  toExec = toExec.replace("{{cctx}}","")
-               if secondPost:
-                    toExec = toExec + " ! " + " ".join(secondPost)
-               #print(f"# {toExec}")
-               exit_or_signal = os.system(toExec)
-               if exit_or_signal == 2:
-                 os.kill(os.getppid(),signal.SIGTERM) 
-      elif "sh" == modifiedPre[1]:  # TODO
-           print("sh")
-      elif modifiedPre[1] in ['+','-']: # TODO
-           print("+ -")
-      elif modifiedPre[1] in plugins: # TODO
-           print("Plugins")
-      else:
-         print("ELSE !")
-         command = ["kubectl"] + args[1:]
-         os.system(' '.join(command))
-   else:
-      command = ["kubectl"] + args[1:]
-      os.system(' '.join(command))
-else:
-  if len(modifiedPre) > 1:
-    #print('UP ELSE', modifiedPre[1])
-    if modifiedPre[1] in prohibited or modifiedPre[1] in kctlOptions:
-        #print("HERE",flush=True)
-        #print(detect_output())
-        command = ["kubectl"] + args[1:]
-        os.system(' '.join(command))
-    elif modifiedPre[1] in allowed :
-         #print("HERE allowed")
-         if modifiedPre[1] == 'config' and modifiedPre[2] == 'get-contexts':
-           if detect_output() == 'pipe':
-               print(f"#{PLUGIN_NAME}:input: config_get-contexts",flush=True)
-           if detect_input() ==  'pipe':
-               pass
-           else:
-               command = ["kubectl"] + args[1:] + ["-o", "name"]
-               os.system(' '.join(command))
-         if modifiedPre[1] in ['+','-'] :
-            if detect_input() == 'fifo':
-                in_format = 'unknown'
-                in_ctx = 'unknown'
-                prevLine = ""
-                for line in sys.stdin:
-                    if prevLine :
-                        line = prevLine + line
-                    if line[-1] != '\n':
-                        prevLine = line
-                        continue
-
-                    if line[0:5] == f"#{PLUGIN_NAME}:":
-                        print(line,end="",flush=True)
+                    toExec = toCheck.replace("{{name}}", name)
+                    if prevKConfig:
+                        toExec = toExec.replace("{{kconfig}}", prevKconfig)
+                        toExec = toExec.replace(
+                            "{{ckconfig}}", "--kubeconfig " + prevKconfig
+                        )
                     else:
-                         if args[1] == '-':
-                            match = False
-                            for i in args[2:]:
-                                if re.search(i,line):
-                                   match = True
-                            if not match:
-                                print(line,end="")
-                         elif args[1] == "+":
-                            for i in args[2:]:
-                                if re.search(i,line):
-                                    print(line,end="")
-                                    break
-            else:
-                print("no fifo")  
-         if modifiedPre[1] == 'sh' :
-            if detect_input() == 'fifo':
-                in_format = 'unknown'
-                in_ctx = 'unknown'
-                prevLine = ""
-                for line in sys.stdin:
-                    if prevLine :
-                        line = prevLine + line
-                    if line[-1] != '\n':
-                        prevLine = line
-                        continue
-                    if line[0:12] == f"#{PLUGIN_NAME}:input: ":
-                        in_format = line[12:-1]
-                        if detect_output() == 'pipe':
-                            print(line,end="",flush=True)
-                    elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
-                        in_ctx = line[10:-1]
-                        if detect_output() == 'pipe':
-                            print(line,end="",flush=True)
+                        toExec = toExec.replace("{{kconfig}}", "")
+                        toExec = toExec.replace("{{ckconfig}}", "")
+                    toExec = toExec.replace("{{ctx}}", name)
+                    toExec = toExec.replace("{{cctx}}", f" --context {name}")
+                    if secondPost:
+                        toExec = toExec + " ! " + " ".join(secondPost)
+                    # print(f"# {toExec}")
+                    exit_or_signal = os.system(toExec)
+                    if exit_or_signal == 2:
+                        os.kill(os.getppid(), signal.SIGTERM)
+        elif "exec" == modifiedPre[1]:
+            command = (
+                ["kubectl"]
+                + pre[1:]
+                + [
+                    "-o",
+                    "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind",
+                    "--no-headers",
+                ]
+            )
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            command_output = result.stdout
+            lines = command_output.split("\n")
+            for line in lines:
+                if line:
+                    fields = line.split()
+                    name = fields[0]
+                    ns = fields[1]
+                    kind = fields[2]
+                    reconstruct = []
+                    if prevCtx:
+                        reconstruct += ["--context", prevCtx]
+                    if ns:
+                        reconstruct += ["-n", ns]
                     else:
-                        if in_format == 'get':
-                            fields = line[:-1].split()
-                            name = fields[0]
-                            ns = fields[1]
-                            kind = fields[2]
-                            toCheck = " ".join(args[2:]) # TODO verify args[2:] might not be guaranteed argument,
-                                                         # there might be other flags before sh ...
-                                                         # that might break executing 
-                            #print(toCheck)
-                            #print(args)
-                            toExec = toCheck.replace(" _ "," {{cctx}} {{cns}} ") 
-                            toExec = toExec.replace("{{name}}",name)
-                            os.environ['_NAME'] = name 
-                            #print(toExec)
-                            if in_ctx != "unknown":
-                               toExec = toExec.replace("{{ctx}}",in_ctx)
-                               toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                               os.environ['_CTX'] = in_ctx
-                            else:
-                               toExec = toExec.replace("{{ctx}}","")
-                               toExec = toExec.replace("{{cctx}}","")
-                            if ns != "<none>":
-                               toExec = toExec.replace("{{ns}}",ns)
-                               toExec = toExec.replace("{{cns}}","-n " + ns)
-                               os.environ['_NS'] = ns
-                            else:
-                               toExec = toExec.replace("{{ns}}","")
-                               toExec = toExec.replace("{{cns}}","")
-
-                            if in_format != "unknown":
-                               os.environ['_INPUT'] = in_format
-                            toExec = toExec.replace("{{kind}}",kind)
-                            os.environ['_KIND'] = kind
-                            #print(toExec)
-                            os.system(toExec)
-                        elif in_format == 'config_get-contexts':
-                            fields = line[:-1].split()
-                            in_ctx = fields[0]
-                       
-                            toCheck = " ".join(args[2:])
-                            toExec = toCheck.replace(" _ "," {{cctx}} ") 
-                            toExec = toExec.replace("{{name}}",in_ctx)
-   
-                            if in_ctx != "unknown":
-                               toExec = toExec.replace("{{ctx}}",in_ctx)
-                               toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                            else:
-                               toExec = toExec.replace("{{ctx}}","")
-                               toExec = toExec.replace("{{cctx}}","")
-                            #print(toExec)
-                            # if detect_output() == 'pipe':
-                               #print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                               #toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                            os.system(toExec)
-                        elif in_format == 'api-resources':
-                           fields = line[:-1].split()
-                           print(fields)
-                           if len(fields)<4 :
-                               print("ERROR")
-                               continue
-                           name = fields[0]
-                           nsed = fields[-2]
-                           kind = fields[-1]
-                           toCheck = " ".join(args[2:])
-                           toExec = toCheck.replace(" _ "," {{cctx}} ")
-                           toExec = toExec.replace("{{nsed}}",nsed)
-                           if in_ctx != "unknown":
-                              toExec = toExec.replace("{{ctx}}",in_ctx)
-                              toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                           else:
-                              toExec = toExec.replace("{{ctx}}","")
-                              toExec = toExec.replace("{{cctx}}","")
-                           toExec = toExec.replace("{{kind}}",kind)
-                           toExec = toExec.replace("{{name}}",name)
-                           if in_ctx != 'unknown':
-                               print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                           if detect_output() == 'pipe':
-                              toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                           print(toExec)
-                           os.system(toExec)
-                           #print("E1")
-  
-                        else: # in_format get
-                            pass 
-            else: # input fifo
-                pass
-    
-         if modifiedPre[1] == 'exec' :
-            if detect_input() == 'fifo':
-                in_format = 'unknown'
-                in_ctx = 'unknown'
-                prevLine = ""
-                for line in sys.stdin:
-                    if prevLine :
-                        line = prevLine + line
-                    if line[-1] != '\n':
-                        prevLine = line
-                        continue
-                    if line[0:12] == f"#{PLUGIN_NAME}:input: ":
-                        in_format = line[12:-1]
-                    elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
-                        in_ctx = line[10:-1]
+                        reconstruct += ["-n", prevNs]
+                    if secondPre[0] == "_":
+                        toCheck = " ".join(
+                            ["kubectl" "{{ckconfig}}", "{{cctx}}", "{{cns}}"]
+                            + secondPre[1:]
+                        )
                     else:
-                        if in_format == 'get':
-                            fields = line[:-1].split()
-                            name = fields[0]
-                            ns = fields[1]
-                            kind = fields[2]
-                            if args[0].split('/')[-1] == '_':
-                                 toCheck = " ".join(['kubectl', '_'] + args[1:])
-                            else:
-                                 toCheck = " ".join(['kubectl'] + args[1:])
-                            #print(toCheck)
-                            #print(args)
-                            toExec = toCheck.replace(" _ "," {{cctx}} {{cns}} ") 
-                            toExec = toExec.replace("{{name}}",name)
-   
-                            #print(toExec)
-                            if in_ctx != "unknown":
-                               toExec = toExec.replace("{{ctx}}",in_ctx)
-                               toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                            else:
-                               toExec = toExec.replace("{{ctx}}","")
-                               toExec = toExec.replace("{{cctx}}","")
-                            if ns != "<none>":
-                               toExec = toExec.replace("{{ns}}",ns)
-                               toExec = toExec.replace("{{cns}}","-n " + ns)
-                            else:
-                               toExec = toExec.replace("{{ns}}","")
-                               toExec = toExec.replace("{{cns}}","")
-                            toExec = toExec.replace("{{kind}}",kind)
-                            #print(toExec)
-                            #if detect_output() == 'pipe':
-                            #   print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
-                            os.system(toExec)
-                        elif in_format == 'config_get-contexts':
-                            fields = line[:-1].split()
-                            in_ctx = fields[0]
-                       
-                            if args[0].split('/')[-1] == '_':
-                                 toCheck = " ".join(['kubectl', '_'] + args[1:])
-                            else:
-                                 toCheck = " ".join(['kubectl'] + args[1:])
-                            toExec = toCheck.replace(" _ "," {{cctx}} ") 
-                            toExec = toExec.replace("{{name}}",in_ctx)
-   
-                            if in_ctx != "unknown":
-                               toExec = toExec.replace("{{ctx}}",in_ctx)
-                               toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                            else:
-                               toExec = toExec.replace("{{ctx}}","")
-                               toExec = toExec.replace("{{cctx}}","")
-                            print(toExec)
-                            # if detect_output() == 'pipe':
-                               #print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                               #toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                            os.system(toExec)
-    
-                        else: # in_format get
-                            pass 
-  
-         if modifiedPre[1] in plugins :
-            print("PLUGIN")
-            print(detect_input())
-            if detect_input() == 'fifo':
-                in_format = 'unknown'
-                in_ctx = 'unknown'
-                prevLine = ""
-                for line in sys.stdin:
-                    if prevLine :
-                        line = prevLine + line
-                    if line[-1] != '\n':
-                        prevLine = line
-                        continue
-                    if line[0:12] == f"#{PLUGIN_NAME}:input: ":
-                        in_format = line[12:-1]
-                    elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
-                        in_ctx = line[10:-1]
+                        toCheck = " ".join(secondPre)
+                    toExec = toCheck.replace("{{name}}", name)
+                    if ns != "<none>":
+                        toExec = toExec.replace("{{ns}}", ns)
+                        toExec = toExec.replace("{{cns}}", "-n " + ns)
                     else:
-                        if in_format == 'get':
-                            print("PLUGIN GET")
-                            fields = line[:-1].split()
-                            name = fields[0]
-                            ns = fields[1]
-                            kind = fields[2]
-                            #if args[0].split('/')[-1] == '_':
-                            #     toCheck = " ".join(['kubectl', modifiedPre[1], '_'] + args[2:])
-                            #else:
-                            toCheck = " ".join(['kubectl'] + args[1:])
-                            #print(toCheck)
-                            #print(args)
-                            toExec = toCheck.replace(" _ "," {{cctx}} {{cns}} ") 
-                            toExec = toExec.replace("{{name}}",name)
-   
-                            #print(toExec)
-                            if in_ctx != "unknown":
-                               toExec = toExec.replace("{{ctx}}",in_ctx)
-                               toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                            else:
-                               toExec = toExec.replace("{{ctx}}","")
-                               toExec = toExec.replace("{{cctx}}","")
-                            if ns != "<none>":
-                               toExec = toExec.replace("{{ns}}",ns)
-                               toExec = toExec.replace("{{cns}}","-n " + ns)
-                            else:
-                               toExec = toExec.replace("{{ns}}","")
-                               toExec = toExec.replace("{{cns}}","")
-                            toExec = toExec.replace("{{kind}}",kind)
-                            #print(toExec)
-                            #if detect_output() == 'pipe':
-                            #   print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
-                            os.system(toExec)
-                        elif in_format == 'config_get-contexts':
-                            fields = line[:-1].split()
-                            in_ctx = fields[0]
-                       
-                            #if args[0].split('/')[-1] == '_':
-                            #     toCheck = " ".join(['kubectl', '_'] + args[1:])
-                            #else:
-                            #     toCheck = " ".join(['kubectl'] + args[1:])
-                            toCheck = " ".join(['kubectl'] + args[1:])
-                            toExec = toCheck.replace(" _ "," {{cctx}} ") 
-                            toExec = toExec.replace("{{name}}",in_ctx)
-   
-                            if in_ctx != "unknown":
-                               toExec = toExec.replace("{{ctx}}",in_ctx)
-                               toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                            else:
-                               toExec = toExec.replace("{{ctx}}","")
-                               toExec = toExec.replace("{{cctx}}","")
-                            #print(toExec)
-                            # if detect_output() == 'pipe':
-                               #print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                               #toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                            os.system(toExec)
-                        elif in_format == 'api-resources':
-                           fields = line[:-1].split()
-                           name = fields[0]
-                           nsed = fields[-2]
-                           kind = fields[-1]
-                           toCheck = " ".join(['kubectl'] + args[1:])
-                           toExec = toCheck.replace(" _ "," {{cctx}} ")
-                           toExec = toExec.replace("{{nsed}}",nsed)
-                           if in_ctx != "unknown":
-                              toExec = toExec.replace("{{ctx}}",in_ctx)
-                              toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                           else:
-                              toExec = toExec.replace("{{ctx}}","")
-                              toExec = toExec.replace("{{cctx}}","")
-                           toExec = toExec.replace("{{kind}}",kind)
-                           toExec = toExec.replace("{{name}}",name)
-                           #if in_ctx != 'unknown':
-                           #    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                           #if detect_output() == 'pipe':
-                           #   toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                           print(toExec)
-                           os.system(toExec)
-                           #print("E1")
-  
-                        else: # in_format get
-                            pass 
-            else: # input not fifo
-               print("NOT FIFO")
-               command = ["kubectl"] + args[1:]
-               os.system(' '.join(command))
-               pass
-         if modifiedPre[1] == 'get':
-           #print("UP GET")
-           if detect_output() == 'pipe':
-               print(f"#{PLUGIN_NAME}:input: get",flush=True)
-           if detect_input() == 'fifo':
-               in_format = 'unknown'
-               in_ctx = 'unknown'
-               prevLine = ""
-               for line in sys.stdin:
-                   if prevLine :
-                       line = prevLine + line
-                   if line[-1] != '\n':
-                       prevLine = line
-                       continue
-                   if line[0:12] == f"#{PLUGIN_NAME}:input: ":
-                       in_format = line[12:-1]
-                   elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
-                       in_ctx = line[10:-1]
-                   else:
-                       if in_format == 'config_get-contexts':
-                           fields = line[:-1].split()
-                           in_ctx = fields[0]
-                           if args[0].split('/')[-1] == '_':
-                                toCheck = " ".join(['kubectl', '_'] + args[1:])
-                           else:
-                                toCheck = " ".join(['kubectl'] + args[1:])
-                           toExec = toCheck.replace(" _ "," {{cctx}} ") 
-                           toExec = toExec.replace("{{name}}",in_ctx)
-  
-                           if in_ctx != "unknown":
-                              toExec = toExec.replace("{{ctx}}",in_ctx)
-                              toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                           else:
-                              toExec = toExec.replace("{{ctx}}","")
-                              toExec = toExec.replace("{{cctx}}","")
-                           if detect_output() == 'pipe':
-                              print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                              toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                           os.system(toExec)
-                       elif in_format == 'get':
-                           fields = line[:-1].split()
-                           name = fields[0]
-                           ns = fields[1]
-                           kind = fields[2]
-                           if args[0].split('/')[-1] == '_':
-                                toCheck = " ".join(['kubectl', '_'] + args[1:])
-                           else:
-                                toCheck = " ".join(['kubectl'] + args[1:])
-                           #print(toCheck)
-                           #print(args)
-                           toExec = toCheck.replace(" _ "," {{cctx}} {{cns}} ") 
-                           toExec = toExec.replace("{{name}}",name)
-  
-                           #print(toExec)
-                           if in_ctx != "unknown":
-                              toExec = toExec.replace("{{ctx}}",in_ctx)
-                              toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                           else:
-                              toExec = toExec.replace("{{ctx}}","")
-                              toExec = toExec.replace("{{cctx}}","")
-                           if ns != "<none>":
-                              toExec = toExec.replace("{{ns}}",ns)
-                              toExec = toExec.replace("{{cns}}","-n " + ns)
-                           else:
-                              toExec = toExec.replace("{{ns}}","")
-                              toExec = toExec.replace("{{cns}}","")
-                           toExec = toExec.replace("{{kind}}",kind)
-                           #print(toExec)
-                           if detect_output() == 'pipe':
-                              print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
-                              toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                           os.system(toExec)
-                           #print("E2 " + toExec)
-                       elif in_format == 'api-resources':
-                           fields = line[:-1].split()
-                           name = fields[0]
-                           nsed = fields[-2]
-                           kind = fields[-1]
-                           if args[0].split('/')[-1] == '_':
-                                toCheck = " ".join(['kubectl', '_'] + args[1:])
-                           else:
-                                toCheck = " ".join(['kubectl'] + args[1:])
-                           toExec = toCheck.replace(" _ "," {{cctx}} ")
-                           toExec = toExec.replace("{{nsed}}",nsed)
-                           if in_ctx != "unknown":
-                              toExec = toExec.replace("{{ctx}}",in_ctx)
-                              toExec = toExec.replace("{{cctx}}","--context " + in_ctx)
-                           else:
-                              toExec = toExec.replace("{{ctx}}","")
-                              toExec = toExec.replace("{{cctx}}","")
-                           toExec = toExec.replace("{{kind}}",kind)
-                           toExec = toExec.replace("{{name}}",name)
-                           if in_ctx != 'unknown':
-                               print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
-                           if detect_output() == 'pipe':
-                              toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                           #print(toExec)
-                           os.system(toExec)
-                           #print("E1")
-                       else:
-                           pass
-           else:
-               if detect_output() == 'pipe':
-                   command = ["kubectl"] + args[1:] + [ "-o", "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind", "--no-headers" ]
-               else:
-                   command = ["kubectl"] + args[1:]
-               #print("E3 " + ' '.join(command))
-               os.system(' '.join(command))
-         if modifiedPre[1] == 'api-resources':
-           if detect_output() == 'pipe':
-               print(f"#{PLUGIN_NAME}:input: api-resources",flush=True)
-           if detect_input() == 'fifo':
-               in_format = 'unknown'
-               in_ctx = 'unknown'
-               prevLine = ""
-               for line in sys.stdin:
-                   if prevLine :
-                       line = prevLine + line
-                   if line[-1] != '\n':
-                       prevLine = line
-                       continue
-                   if line[0:12] == f"#{PLUGIN_NAME}:input: ":
-                       in_format = line[12:-1]
-                   elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
-                       in_ctx = line[10:-1]
-                   else:
-                       if in_format == 'api-resources':
-                           pass
-                       elif in_format == 'get':
-                           pass
-                           #fields = line[:-1].split()
-                           #name = fields[0]
-                           #nsed = fields[-2]
-                           #kind = fields[-1]
-                           #toCheck = " ".join(['kubectl'] + args[1:])
-                           #
-                           #toExec = toCheck.replace("{{nsed}}",nsed)
-                           #toExec = toCheck.replace("{{kind}}",kind)
-                           #toExec = toCheck.replace("{{name}}",name)
-                           #if ctx != 'unknown': 
-                           #    print(f"#{PLUGIN_NAME}:ctx: {{args[1:]}}",flush=True)
-                           #os.system(toExec)
-                       elif in_format == 'config_get-contexts':
-                           print(f"#{PLUGIN_NAME}:ctx: {line[:-1]}",flush=True)
-                           if args[0].split('/')[-1] == '_':
-                                toCheck = " ".join(['kubectl', '_'] + args[1:])
-                           else:
-                                toCheck = " ".join(['kubectl'] + args[1:])
-                           toExec = toCheck.replace(" _ "," {{cctx}} ") 
-                           toExec = toExec.replace("{{ctx}}",line[:-1])
-                           toExec = toExec.replace("{{cctx}}","--context " + line[:-1])
-                           if detect_output() == 'pipe':
-                              toExec = toExec + ' --verbs=get,list --no-headers '
-                           #print(toExec)
-                           os.system(toExec)
-           else:
-               if detect_output() == 'pipe':
-                    command = ["kubectl"] + args[1:] + ["--verbs=get,list", "--no-headers" ]
-               else:
-                    command = ["kubectl"] + args[1:]
-               os.system(' '.join(command))
-    else:
-        if detect_output() == 'pipe':
-            print("#{PLUGIN_NAME}: unformatted",flush=True)
-        if detect_input() == 'pipe':
-            pass
+                        toExec = toExec.replace("{{ns}}", "")
+                        toExec = toExec.replace("{{cns}}", "")
+                    toExec = toExec.replace("{{kind}}", kind)
+                    if prevKConfig:
+                        toExec = toExec.replace("{{kconfig}}", prevKconfig)
+                        toExec = toExec.replace(
+                            "{{ckconfig}}", "--kubeconfig " + prevKconfig
+                        )
+                    else:
+                        toExec = toExec.replace("{{kconfig}}", "")
+                        toExec = toExec.replace("{{ckconfig}}", "")
+                    if prevCtx:
+                        toExec = toExec.replace("{{ctx}}", prevCtx)
+                        toExec = toExec.replace("{{cctx}}", "--context " + prevCtx)
+                    else:
+                        toExec = toExec.replace("{{ctx}}", "")
+                        toExec = toExec.replace("{{cctx}}", "")
+                    if secondPost:
+                        toExec = toExec + " ! " + " ".join(secondPost)
+                    # print(f"# {toExec}")
+                    exit_or_signal = os.system(toExec)
+                    if exit_or_signal == 2:
+                        os.kill(os.getppid(), signal.SIGTERM)
+        elif "get" == modifiedPre[1]:
+            command = (
+                ["kubectl"]
+                + pre[1:]
+                + [
+                    "-o",
+                    "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind",
+                    "--no-headers",
+                ]
+            )
+            result = subprocess.run(command, capture_output=True, text=True, check=True)
+            command_output = result.stdout
+            lines = command_output.split("\n")
+            for line in lines:
+                if line:
+                    fields = line.split()
+                    name = fields[0]
+                    ns = fields[1]
+                    kind = fields[2]
+                    reconstruct = []
+                    if prevCtx:
+                        reconstruct += ["--context", prevCtx]
+                    if ns:
+                        reconstruct += ["-n", ns]
+                    else:
+                        reconstruct += ["-n", prevNs]
+                    if secondPre[0] == "_":
+                        toCheck = " ".join(
+                            [
+                                "kubectl",
+                                PLUGIN_NAME,
+                                "{{ckconfig}}",
+                                "{{cctx}}",
+                                "{{cns}}",
+                            ]
+                            + secondPre[1:]
+                        )
+                    else:
+                        toCheck = " ".join(secondPre)
+                    toExec = toCheck.replace("{{name}}", name)
+                    if ns != "<none>":
+                        toExec = toExec.replace("{{ns}}", ns)
+                        toExec = toExec.replace("{{cns}}", "-n " + ns)
+                    else:
+                        toExec = toExec.replace("{{ns}}", "")
+                        toExec = toExec.replace("{{cns}}", "")
+                    toExec = toExec.replace("{{kind}}", kind)
+                    if prevKConfig:
+                        toExec = toExec.replace("{{kconfig}}", prevKconfig)
+                        toExec = toExec.replace(
+                            "{{ckconfig}}", "--kubeconfig " + prevKconfig
+                        )
+                    else:
+                        toExec = toExec.replace("{{kconfig}}", "")
+                        toExec = toExec.replace("{{ckconfig}}", "")
+                    if prevCtx:
+                        toExec = toExec.replace("{{ctx}}", prevCtx)
+                        toExec = toExec.replace("{{cctx}}", "--context " + prevCtx)
+                    else:
+                        toExec = toExec.replace("{{ctx}}", "")
+                        toExec = toExec.replace("{{cctx}}", "")
+                    if secondPost:
+                        toExec = toExec + " ! " + " ".join(secondPost)
+                    exit_or_signal = os.system(toExec)
+                    if exit_or_signal == 2:
+                        os.kill(os.getppid(), signal.SIGTERM)
+        elif "sh" == modifiedPre[1]:  # TODO
+            print("sh")
+        elif modifiedPre[1] in ["+", "-"]:  # TODO
+            print("+ -")
+        elif modifiedPre[1] in plugins:  # TODO
+            print("Plugins")
         else:
-            command = ['kubectl'] + args[1:]
-            print("XXXX")
-            print(command)
-            os.system(' '.join(command))
-  else:
-    print("empty modifiedPre")
-    print(modifiedPre)
+            print("ELSE !")
+            command = ["kubectl"] + args[1:]
+            os.system(" ".join(command))
+    else:
+        command = ["kubectl"] + args[1:]
+        os.system(" ".join(command))
+else:
+    if len(modifiedPre) > 1:
+        if modifiedPre[1] in prohibited or modifiedPre[1] in kctlOptions:
+            command = ["kubectl"] + args[1:]
+            os.system(" ".join(command))
+        elif modifiedPre[1] in allowed:
+            if modifiedPre[1] == "config" and modifiedPre[2] == "get-contexts":
+                if detect_output() == "pipe":
+                    print(f"#{PLUGIN_NAME}:input: config_get-contexts", flush=True)
+                if detect_input() == "pipe":
+                    pass
+                else:
+                    command = ["kubectl"] + args[1:] + ["-o", "name"]
+                    os.system(" ".join(command))
+            if modifiedPre[1] in ["+", "-"]:
+                if detect_input() == "fifo":
+                    in_format = "unknown"
+                    in_ctx = "unknown"
+                    prevLine = ""
+                    for line in sys.stdin:
+                        if prevLine:
+                            line = prevLine + line
+                        if line[-1] != "\n":
+                            prevLine = line
+                            continue
+
+                        if line[0:5] == f"#{PLUGIN_NAME}:":
+                            print(line, end="", flush=True)
+                        else:
+                            if args[1] == "-":
+                                match = False
+                                for i in args[2:]:
+                                    if re.search(i, line):
+                                        match = True
+                                if not match:
+                                    print(line, end="")
+                            elif args[1] == "+":
+                                for i in args[2:]:
+                                    if re.search(i, line):
+                                        print(line, end="")
+                                        break
+                else:
+                    print(f"#{PLUGIN_NAME}:erro: no pipe input")
+            if modifiedPre[1] == "sh":
+                if detect_input() == "fifo":
+                    in_format = "unknown"
+                    in_ctx = "unknown"
+                    prevLine = ""
+                    for line in sys.stdin:
+                        if prevLine:
+                            line = prevLine + line
+                        if line[-1] != "\n":
+                            prevLine = line
+                            continue
+                        if line[0:12] == f"#{PLUGIN_NAME}:input: ":
+                            in_format = line[12:-1]
+                            if detect_output() == "pipe":
+                                print(line, end="", flush=True)
+                        elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
+                            in_ctx = line[10:-1]
+                            if detect_output() == "pipe":
+                                print(line, end="", flush=True)
+                        else:
+                            if in_format == "get":
+                                fields = line[:-1].split()
+                                name = fields[0]
+                                ns = fields[1]
+                                kind = fields[2]
+                                toCheck = " ".join(
+                                    args[2:]
+                                )  # TODO verify args[2:] might not be guaranteed argument,
+                                # there might be other flags before sh ...
+                                # that might break executing
+                                # print(toCheck)
+                                # print(args)
+                                toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
+                                toExec = toExec.replace("{{name}}", name)
+                                os.environ["_NAME"] = name
+                                # print(toExec)
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                    os.environ["_CTX"] = in_ctx
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                if ns != "<none>":
+                                    toExec = toExec.replace("{{ns}}", ns)
+                                    toExec = toExec.replace("{{cns}}", "-n " + ns)
+                                    os.environ["_NS"] = ns
+                                else:
+                                    toExec = toExec.replace("{{ns}}", "")
+                                    toExec = toExec.replace("{{cns}}", "")
+
+                                if in_format != "unknown":
+                                    os.environ["_INPUT"] = in_format
+                                toExec = toExec.replace("{{kind}}", kind)
+                                os.environ["_KIND"] = kind
+                                # print(toExec)
+                                os.system(toExec)
+                            elif in_format == "config_get-contexts":
+                                fields = line[:-1].split()
+                                in_ctx = fields[0]
+
+                                toCheck = " ".join(args[2:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{name}}", in_ctx)
+
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                # print(toExec)
+                                # if detect_output() == 'pipe':
+                                # print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
+                                # toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
+                                os.system(toExec)
+                            elif in_format == "api-resources":
+                                fields = line[:-1].split()
+                                print(fields)
+                                if len(fields) < 4:
+                                    print("ERROR")
+                                    continue
+                                name = fields[0]
+                                nsed = fields[-2]
+                                kind = fields[-1]
+                                toCheck = " ".join(args[2:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{nsed}}", nsed)
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                toExec = toExec.replace("{{kind}}", kind)
+                                toExec = toExec.replace("{{name}}", name)
+                                if in_ctx != "unknown":
+                                    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}", flush=True)
+                                if detect_output() == "pipe":
+                                    toExec = (
+                                        toExec
+                                        + " -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers "
+                                    )
+                                os.system(toExec)
+
+                            else:  # unknown format, TODO prevent printing multiple error lines
+                                print(
+                                    f"#{PLUGIN_NAME}:error: unknown format : {in_fomat}"
+                                )
+                                pass
+                else:  # input not fifo
+                    toExec = " ".join(args[2:])
+                    os.system(toExec)
+                    pass
+            elif modifiedPre[1] == "exec":
+                if detect_input() == "fifo":
+                    in_format = "unknown"
+                    in_ctx = "unknown"
+                    prevLine = ""
+                    for line in sys.stdin:
+                        if prevLine:
+                            line = prevLine + line
+                        if line[-1] != "\n":
+                            prevLine = line
+                            continue
+                        if line[0:12] == f"#{PLUGIN_NAME}:input: ":
+                            in_format = line[12:-1]
+                        elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
+                            in_ctx = line[10:-1]
+                        else:
+                            if in_format == "get":
+                                fields = line[:-1].split()
+                                name = fields[0]
+                                ns = fields[1]
+                                kind = fields[2]
+                                if args[0].split("/")[-1] == "_":
+                                    toCheck = " ".join(["kubectl", "_"] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                # print(toCheck)
+                                # print(args)
+                                toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
+                                toExec = toExec.replace("{{name}}", name)
+
+                                # print(toExec)
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                if ns != "<none>":
+                                    toExec = toExec.replace("{{ns}}", ns)
+                                    toExec = toExec.replace("{{cns}}", "-n " + ns)
+                                else:
+                                    toExec = toExec.replace("{{ns}}", "")
+                                    toExec = toExec.replace("{{cns}}", "")
+                                toExec = toExec.replace("{{kind}}", kind)
+                                # print(toExec)
+                                # if detect_output() == 'pipe':
+                                #   print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
+                                os.system(toExec)
+                            elif in_format == "config_get-contexts":
+                                fields = line[:-1].split()
+                                in_ctx = fields[0]
+
+                                if args[0].split("/")[-1] == "_":
+                                    toCheck = " ".join(["kubectl", "_"] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{name}}", in_ctx)
+
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                print(toExec)
+                                # if detect_output() == 'pipe':
+                                # print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
+                                # toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
+                                os.system(toExec)
+                            else:  # unknown format, TODO prevent repeating error
+                                print(
+                                    f"#{PLUGIN_NAME}:error: unknown format : {in_fomat}"
+                                )
+                                pass
+                else:  # input not fifo
+                    toExec = " ".join(args[2:])
+                    os.system(toExec)
+                    pass
+            elif modifiedPre[1] in plugins:
+                print("PLUGIN")
+                print(detect_input())
+                if detect_input() == "fifo":
+                    in_format = "unknown"
+                    in_ctx = "unknown"
+                    prevLine = ""
+                    for line in sys.stdin:
+                        if prevLine:
+                            line = prevLine + line
+                        if line[-1] != "\n":
+                            prevLine = line
+                            continue
+                        if line[0:12] == f"#{PLUGIN_NAME}:input: ":
+                            in_format = line[12:-1]
+                        elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
+                            in_ctx = line[10:-1]
+                        else:
+                            if in_format == "get":
+                                print("PLUGIN GET")
+                                fields = line[:-1].split()
+                                name = fields[0]
+                                ns = fields[1]
+                                kind = fields[2]
+                                # if args[0].split('/')[-1] == '_':
+                                #     toCheck = " ".join(['kubectl', modifiedPre[1], '_'] + args[2:])
+                                # else:
+                                toCheck = " ".join(["kubectl"] + args[1:])
+                                # print(toCheck)
+                                # print(args)
+                                toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
+                                toExec = toExec.replace("{{name}}", name)
+
+                                # print(toExec)
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                if ns != "<none>":
+                                    toExec = toExec.replace("{{ns}}", ns)
+                                    toExec = toExec.replace("{{cns}}", "-n " + ns)
+                                else:
+                                    toExec = toExec.replace("{{ns}}", "")
+                                    toExec = toExec.replace("{{cns}}", "")
+                                toExec = toExec.replace("{{kind}}", kind)
+                                # print(toExec)
+                                # if detect_output() == 'pipe':
+                                #   print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
+                                os.system(toExec)
+                            elif in_format == "config_get-contexts":
+                                fields = line[:-1].split()
+                                in_ctx = fields[0]
+
+                                # if args[0].split('/')[-1] == '_':
+                                #     toCheck = " ".join(['kubectl', '_'] + args[1:])
+                                # else:
+                                #     toCheck = " ".join(['kubectl'] + args[1:])
+                                toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{name}}", in_ctx)
+
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                # print(toExec)
+                                # if detect_output() == 'pipe':
+                                # print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
+                                # toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
+                                os.system(toExec)
+                            elif in_format == "api-resources":
+                                fields = line[:-1].split()
+                                name = fields[0]
+                                nsed = fields[-2]
+                                kind = fields[-1]
+                                toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{nsed}}", nsed)
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                toExec = toExec.replace("{{kind}}", kind)
+                                toExec = toExec.replace("{{name}}", name)
+                                # if in_ctx != 'unknown':
+                                #    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}",flush=True)
+                                # if detect_output() == 'pipe':
+                                #   toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
+                                print(toExec)
+                                os.system(toExec)
+                                # print("E1")
+                            else:  # unknown format, TODO prevent repeating error
+                                print(
+                                    f"#{PLUGIN_NAME}:error: unknown format : {in_fomat}"
+                                )
+                                pass
+                else:  # input not fifo
+                    toExec = " ".join(args[2:])
+                    os.system(toExec)
+                    pass
+            elif modifiedPre[1] == "get":
+                # print("UP GET")
+                if detect_output() == "pipe":
+                    print(f"#{PLUGIN_NAME}:input: get", flush=True)
+                if detect_input() == "fifo":
+                    in_format = "unknown"
+                    in_ctx = "unknown"
+                    prevLine = ""
+                    for line in sys.stdin:
+                        if prevLine:
+                            line = prevLine + line
+                        if line[-1] != "\n":
+                            prevLine = line
+                            continue
+                        if line[0:12] == f"#{PLUGIN_NAME}:input: ":
+                            in_format = line[12:-1]
+                        elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
+                            in_ctx = line[10:-1]
+                        else:
+                            if in_format == "config_get-contexts":
+                                fields = line[:-1].split()
+                                in_ctx = fields[0]
+                                if args[0].split("/")[-1] == "_":
+                                    toCheck = " ".join(["kubectl", "_"] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{name}}", in_ctx)
+
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                if detect_output() == "pipe":
+                                    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}", flush=True)
+                                    toExec = (
+                                        toExec
+                                        + " -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers "
+                                    )
+                                os.system(toExec)
+                            elif in_format == "get":
+                                fields = line[:-1].split()
+                                name = fields[0]
+                                ns = fields[1]
+                                kind = fields[2]
+                                if args[0].split("/")[-1] == "_":
+                                    toCheck = " ".join(["kubectl", "_"] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
+                                toExec = toExec.replace("{{name}}", name)
+
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                if ns != "<none>":
+                                    toExec = toExec.replace("{{ns}}", ns)
+                                    toExec = toExec.replace("{{cns}}", "-n " + ns)
+                                else:
+                                    toExec = toExec.replace("{{ns}}", "")
+                                    toExec = toExec.replace("{{cns}}", "")
+                                toExec = toExec.replace("{{kind}}", kind)
+                                if detect_output() == "pipe":
+                                    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}")
+                                    toExec = (
+                                        toExec
+                                        + " -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers "
+                                    )
+                                os.system(toExec)
+                            elif in_format == "api-resources":
+                                fields = line[:-1].split()
+                                name = fields[0]
+                                nsed = fields[-2]
+                                kind = fields[-1]
+                                if args[0].split("/")[-1] == "_":
+                                    toCheck = " ".join(["kubectl", "_"] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{nsed}}", nsed)
+                                if in_ctx != "unknown":
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx
+                                    )
+                                else:
+                                    toExec = toExec.replace("{{ctx}}", "")
+                                    toExec = toExec.replace("{{cctx}}", "")
+                                toExec = toExec.replace("{{kind}}", kind)
+                                toExec = toExec.replace("{{name}}", name)
+                                if in_ctx != "unknown":
+                                    print(f"#{PLUGIN_NAME}:ctx: {in_ctx}", flush=True)
+                                if detect_output() == "pipe":
+                                    toExec = (
+                                        toExec
+                                        + " -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers "
+                                    )
+                                os.system(toExec)
+                            else:  # unknown format, TODO prevent repeating error
+                                print(
+                                    f"#{PLUGIN_NAME}:error: unknown format : {in_fomat}"
+                                )
+                                pass
+                else:
+                    if detect_output() == "pipe":
+                        command = (
+                            ["kubectl"]
+                            + args[1:]
+                            + [
+                                "-o",
+                                "custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind",
+                                "--no-headers",
+                            ]
+                        )
+                    else:
+                        command = ["kubectl"] + args[1:]
+                    os.system(" ".join(command))
+            elif modifiedPre[1] == "api-resources":
+                if detect_output() == "pipe":
+                    print(f"#{PLUGIN_NAME}:input: api-resources", flush=True)
+                if detect_input() == "fifo":
+                    in_format = "unknown"
+                    in_ctx = "unknown"
+                    prevLine = ""
+                    for line in sys.stdin:
+                        if prevLine:
+                            line = prevLine + line
+                        if line[-1] != "\n":
+                            prevLine = line
+                            continue
+                        if line[0:12] == f"#{PLUGIN_NAME}:input: ":
+                            in_format = line[12:-1]
+                        elif line[0:10] == f"#{PLUGIN_NAME}:ctx: ":
+                            in_ctx = line[10:-1]
+                        else:
+                            if in_format == "api-resources":
+                                printf(
+                                    f"#{PLUGIN_NAME}:error: Illegal pipe pass: from api-resources to api-resources"
+                                )
+                                continue
+                            elif in_format == "get":
+                                printf(
+                                    f"#{PLUGIN_NAME}:error: Illegal pipe pass: from api-resources to get"
+                                )
+                                continue
+                            elif in_format == "config_get-contexts":
+                                print(f"#{PLUGIN_NAME}:ctx: {line[:-1]}", flush=True)
+                                if args[0].split("/")[-1] == "_":
+                                    toCheck = " ".join(["kubectl", "_"] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                toExec = toExec.replace("{{ctx}}", line[:-1])
+                                toExec = toExec.replace(
+                                    "{{cctx}}", "--context " + line[:-1]
+                                )
+                                if detect_output() == "pipe":
+                                    toExec = toExec + " --verbs=get,list --no-headers "
+                                os.system(toExec)
+                            else:
+                                print(
+                                    f"#{PLUGIN_NAME}:error: unknown format : {in_fomat}"
+                                )
+                                pass
+                else:
+                    if detect_output() == "pipe":
+                        command = (
+                            ["kubectl"]
+                            + args[1:]
+                            + ["--verbs=get,list", "--no-headers"]
+                        )
+                    else:
+                        command = ["kubectl"] + args[1:]
+                    os.system(" ".join(command))
+        else:
+            print(
+                f"#{PLUGIN_NAME}:error: unhandled command {modifiedPre[1]}", flush=True
+            )
+            command = args[1:]
+            os.system(" ".join(command))
+    else:
+        print(f"#{PLUGIN_NAME}:error: empty command or not recognized command")
