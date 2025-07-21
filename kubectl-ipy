@@ -34,7 +34,10 @@ PLUGIN_NAME = "ipy"
 # _ config get-contexts | _ tks {{cctx}} -n test-run -l app=nginx start " env" -X
 #
 # TODO pass labels on get, make kubectl extension lget/xget that passes  labels and other fields
-# TODO sh pipe for example pipe grep -v nesto
+# TODO sh pipe for example pipe grep -v something 
+# TODO filter per object type (? kind not in abcd,efgh or ? name not ) 
+# TODO some uniq kind of filter ie for get {{kind}} -A to extract just namespaces where object is present
+# TODO convert ipy to use named headers as flexible variables in pipe stream
 # # # # #
 # config get-contexts -> get
 # config get-context -> api-resources
