@@ -5,9 +5,11 @@ PIPE_CTX_IN = "pipe-ctx-in"
 PIPE_FMT_IN = "pipe-fmt-in"
 PIPE_NS_IN = "pipe-ns-in"
 PIPE_KIND_IN = "pipe-kind-in"
+PIPE_NOTE_IN = "pipe-note-in"
 P_UNKNOWN = "_unknown_"
 P_DEFAULT = "_default_"
 P_CUSTOM_FMT = "custom-format"
+CTX_HEADERS= [ 'CURRENT', 'NAME', 'CLUSTER', 'AUTHINFO', 'NAMESPACE' ]
 # TODO convert plugin to use named headers as flexible variables in pipe stream
 # TODO GOALS
 # 1) check what are options for out our band/pipe communication - linxu for sure, but mac ?
@@ -310,7 +312,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     else:
                         print(line,end="")
             if extracted[1] == "json-inject":
-                print('{\n  "items": [')
+                #print('{\n  "items": [')
                 inject = ""
                 line = sys.stdin.readline()
                 while line:
@@ -320,16 +322,21 @@ if len(extracted) > 1 and extracted[1] in allowed:
                             inject = '"context": "' + line[len(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:")+1:-1] + '",'
                     else: # TODO check json ident comparing to jq
                         if line == "{\n" and inject:
-                           print("    {\n      " + inject)
+                           #print("    {\n      " + inject)
+                           print("{\n  " + inject)
                         elif line == "}\n":
                            if newline:
-                             print("    " + line[:-1] + ",")
+                             #print("    " + line[:-1] + ",")
+                             #print(line[:-1] + ",")
+                             print(line[:-1])
                            else:
-                             print("    " + line[:-1]) 
+                             #print("    " + line[:-1]) 
+                             print(line[:-1]) 
                         else:
-                           print("  " + line,end="")
+                           #print("  " + line,end="")
+                           print(line,end="")
                     line = newline 
-                print("  ]\n}")
+                #print("  ]\n}")
             if extracted[1] == "sh":
                 if detect_input() == "fifo":
                     in_format = P_UNKNOWN
@@ -644,7 +651,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     toExec = " ".join(args[2:])
                     os.system(toExec)
                     pass
-            elif extracted[1] == "get":
+            elif extracted[1] == "get": # in cmd command
                 # print("UP GET")
                 if detect_output() == "pipe":
                     print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: get", flush=True)
@@ -670,22 +677,17 @@ if len(extracted) > 1 and extracted[1] in allowed:
                         if line[-1] != "\n":
                             prevLine = line
                             continue
-                        if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: "):
+                        if line.startswith(f"#{PLUGIN_NAME}:"):
+                          if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: "):
                             in_cmd = line[len(PLUGIN_NAME)+4+len(PIPE_FMT_IN):-1]
-                            line_num = 0
-                            continue
-                        elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: "):
+                          elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: "):
                             in_format = line[len(PLUGIN_NAME)+4+len(PIPE_FMT_IN):-1]
-                            line_num = 0
-                            continue
-                        elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_KIND_IN}: "):
+                          elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_KIND_IN}: "):
                             in_kind = line[len(PLUGIN_NAME)+4+len(PIPE_KIND_IN):-1]
-                            line_num = 0
-                            continue
-                        elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
+                          elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
                             in_ctx = line[len(PLUGIN_NAME)+4+len(PIPE_CTX_IN):-1]
-                            line_num = 0
-                            continue
+                          line_num = 0
+                          continue
                         else:
                             if in_cmd == "config_get-contexts": # in cmd get
                                 fields = line[:-1].split()
@@ -906,7 +908,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     else:
                         command = ["kubectl"] + args[1:]
                     os.system(" ".join(command))
-            elif extracted[1] == "api-resources": # API resources cmd
+            elif extracted[1] == "api-resources": # cmd api-resources
                 if detect_output() == "pipe":
                     print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: api-resources", flush=True)
                 if detect_input() == "fifo":
@@ -927,22 +929,23 @@ if len(extracted) > 1 and extracted[1] in allowed:
                         if line[-1] != "\n":
                             prevLine = line
                             continue
-                        if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: "):
+                        if line.startswith(f"#{PLUGIN_NAME}:"):
+                          if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: "):
                             in_cmd = line[len(PLUGIN_NAME)+4+len(PIPE_FMT_IN):-1]
-                            continue
-                        elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: "):
+                          elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: "):
                             in_format = line[len(PLUGIN_NAME)+4+len(PIPE_FMT_IN):-1]
-                            continue
-                        elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
+                          elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
                             in_ctx = line[len(PLUGIN_NAME)+4+len(PIPE_CTX_IN):-1]
-                            continue
+                          line_num = 0
+                          continue
+                        # no PIPE_NS_IN or PIPE_KIND_IN in this command 
                         else:
                             if in_cmd in ["api-resources","get"]:
                                 printf(
                                     f"#{PLUGIN_NAME}:error: Illegal pipe pass: from {in_cmd} to api-resources"
                                 )
                                 continue
-                            elif in_cmd == "config_get-contexts": 
+                            elif in_cmd == "config_get-contexts": # API resources cmd
                                 if in_format == P_DEFAULT:
                                   # loading headers
                                   if line_num == 0 and line.isupper():
@@ -969,6 +972,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                          in_ctx = content['NAME']
                                 elif in_format == "name":
                                   in_ctx = line[:-1]
+
                                 if detect_output() == "pipe" and in_ctx != P_UNKNOWN:
                                     print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}", flush=True)
                                 toCheck = ""                                
@@ -993,14 +997,47 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                     else:
                                         print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {P_DEFAULT}", flush=True)
                                     #toExec = toExec + " --verbs=get,list --no-headers"
+                                    print(f"#{PLUGIN_NAME}:{PIPE_NOTE_IN}: appending --verbs=get,list", flush=True)
                                     toExec = toExec + " --verbs=get,list"
                                 #print(toExec)
                                 os.system(toExec)
-                            else:
-                                print(
-                                    f"#{PLUGIN_NAME}:error: unknown format : {in_format}"
-                                )
-                                pass
+                            else: # not default or name format, no in cmd
+                              if detect_input() == "fifo":
+                                if prevLine:
+                                  line = prevLine + line
+                                if line[-1] != "\n":
+                                   prevLine = line
+                                   continue
+                                if line_num == 0 and line.isupper():
+                                      line_num += 1
+                                      words=line.split()
+                                      ofs = 0
+                                      for idx in range(len(words)):
+                                          pos = ofs + line[ofs:].index(words[idx])
+                                          position.append(pos)
+                                          columns.append(words[idx])
+                                          length.append(len(words[idx]))
+                                          ofs = pos + len(words[idx])
+                                      continue
+                                else:
+                                      if len(position):
+                                         item = ""
+                                         for idx in range(len(position)):
+                                             if idx + 1 != len(position):
+                                                 item = line[position[idx]:position[idx+1]-1]
+                                             else:
+                                                 item = line[position[idx]:-1]
+                                             content[columns[idx]] = item.rstrip()
+                                if 'NAME' in content :
+                                   in_ctx = content['NAME']
+                                   print(in_ctx)
+                                else: # taking line as context name
+                                   in_ctx = line[:-1]
+          # HERE continue to work
+                                  print(line_num)
+                                  print(
+                                    f"#{PLUGIN_NAME}:error: unknown format : {in_format} {in_ctx}"
+                                  )
                             line_num += 1
                 else:
                     if detect_output() == "pipe":
