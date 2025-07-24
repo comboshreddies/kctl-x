@@ -82,15 +82,17 @@ def fetch_kubectl_options():
      lines = command_output.split("\n")
      list = []
      for line in lines:
-        words=line.split()
-        if len(words) > 0 and words[0][0] == '-' and len(words) in [1,2] :
+        left_part = line.split(':')[0]
+        words=left_part.split()
+        print(words)
+        if len(words) > 0 and words[0][0] == '-' :
           for word in words:
-            if word[0]=="-" and word[0:2] != "--":
-               if word[-1]==",":
+            if word[0]=="-" and word[0:2] != "--" and word[-1]==",":
+                  print(line)
                   list.append(word[:-1])
-            if word[:2] == "--" :
-               if "=" in word and word[-1]==":":
+            if word[:2] == "--" and"=" in word and word[-1]==":":
                   list.append(word[:word.index('=')])
+     print("-----==---")
      return list              
 
 
@@ -156,12 +158,12 @@ def fetch_kubectl_cmd_options(cmd,context=""):
         words=line.split()
         if len(words) > 0 and words[0][0] == '-' and len(words) in [1,2] :
           for word in words:
-            if word[0]=="-" and word[0:2] != "--":
-               if word[-1]==",":
+            print(word)
+            if word[0]=="-" and word[0:2] != "--" and  word[-1]==",":
                   list.append(word[:-1])
-            if word[:2] == "--" :
-               if "=" in word and word[-1]==":":
+            if word[:2] == "--" and "=" in word and word[-1]==":":
                   list.append(word[:word.index('=')])
+     print("-------")
      return list              
 
 def detect_content(line):
@@ -230,9 +232,11 @@ SHORTCUT = "_"
 if os.getenv("KUBECTL_PLUGIN_SHORT"):
    SHORTCUT = os.getenv("KUBECTL_PLUGIN_SHORT")
 
+print(kctlOptions)
 extracted = []
 i = 0
 while i < len(args):
+    print(args[i])
     if args[i] in kctlOptions:
         i += 2
         continue
@@ -1030,16 +1034,39 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                              content[columns[idx]] = item.rstrip()
                                 if 'NAME' in content :
                                    in_ctx = content['NAME']
-                                   print(in_ctx)
+                                  # print(in_ctx)
                                 else: # taking line as context name
-                                   in_ctx = line[:-1]
-          # HERE continue to work
-                                  print(line_num)
-                                  print(
-                                    f"#{PLUGIN_NAME}:error: unknown format : {in_format} {in_ctx}"
-                                  )
+                                  in_ctx = line[:-1]
+                                if detect_output() == "pipe" and in_ctx != P_UNKNOWN:
+                                    print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}", flush=True)
+                                toCheck = ""                                
+                                if args[0].split("/")[-1] == SHORTCUT:
+                                    toCheck = " ".join(["kubectl", SHORTCUT] + args[1:])
+                                else:
+                                    toCheck = " ".join(["kubectl"] + args[1:])
+                                if in_ctx != P_UNKNOWN:
+                                    toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                    toExec = toExec.replace("{{ctx}}", in_ctx)
+                                    toExec = toExec.replace(
+                                        "{{cctx}}", "--context " + in_ctx 
+                                    )
+                                else:
+                                    toExec = toCheck
+                                # TODO decide what could be used
+                                if detect_output() == "pipe":
+                                    outputPresent = "-o" in args[1:] 
+                                    if outputPresent:
+                                        outputOptions = args[1:][args[1:].index("-o")+1]
+                                        print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {outputOptions}", flush=True)
+                                    else:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {P_DEFAULT}", flush=True)
+                                    #toExec = toExec + " --verbs=get,list --no-headers"
+                                    print(f"#{PLUGIN_NAME}:{PIPE_NOTE_IN}: appending --verbs=get,list", flush=True)
+                                    toExec = toExec + " --verbs=get,list"
+                                #print(toExec)
+                                os.system(toExec)
                             line_num += 1
-                else:
+                else: #  cmd api-resources, detect input is fifo 
                     if detect_output() == "pipe":
                         command = (
                             ["kubectl"]
@@ -1049,6 +1076,8 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     else:
                         command = ["kubectl"] + args[1:]
                     os.system(" ".join(command))
+            else:
+                print(f"#{PLUGIN_NAME}:error: unkown command")
         else:
             print(
                 f"#{PLUGIN_NAME}:error: unhandled command {extracted[1]}", flush=True
@@ -1058,4 +1087,6 @@ if len(extracted) > 1 and extracted[1] in allowed:
     else:
         print(f"#{PLUGIN_NAME}:error: empty command or not recognized command")
 else:
-   print("no arguments provided")
+   print("unrecognized arguments provided")
+   print(args)
+   print(extracted)
