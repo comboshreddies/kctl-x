@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 PLUGIN_NAME = "line"
+PLUGIN_UNAME = PLUGIN_NAME.upper()
 PIPE_CMD_IN = "pipe-cmd-in"
+PIPE_GET_IN = "pipe-get-in"
 PIPE_CTX_IN = "pipe-ctx-in"
 PIPE_FMT_IN = "pipe-fmt-in"
 PIPE_NS_IN = "pipe-ns-in"
+PIPE_NSED_IN = "pipe-nsed-in"
 PIPE_KIND_IN = "pipe-kind-in"
 PIPE_NAME_IN = "pipe-name-in"
 PIPE_NOTE_IN = "pipe-note-in"
@@ -27,6 +30,22 @@ P_SHORTCUT = "_"
 # get -> get
 # get -> exec
 # # # # #
+# all commands render command input options/switches for context cmd_ctx, namespace cmd_ns and
+# get command can render cmd_kind and if present cmd_name (object name if present)
+#     (TODO consider setting label selector, maybe needed maybe not)
+# not all commands use, so none of cmd_* are used in config_get-contexts
+# * api-resources uses cmd_ctx and cmd_ns if present in command line to pass those via #pipe
+# * get: uses cmd_ctx/cmd_ns/cmd_kind/cmd_name if is first command in pipe sequence
+#      to pass those to next pipe, but TODO get ns is special case !!
+#
+# config get-contexts :
+# - takes : nothing
+# - provides: context, as column NAME
+# api-resources:
+# - takes context as #pipe
+# - provides in_kind as column KIND:
+
+
 import sys
 import os
 import subprocess
@@ -59,7 +78,10 @@ import re
 ### also kind too and name if needed
 # also if those are passed and there are explicit --context -n  we should respect explicit
 # ^^^
-
+# TODO
+# time /bin/bash -c " _ --context miku api-resources | _ get ns | _ get {{kind}} | _ get {{kind}} {{name}} > /tmp/x"
+# time /bin/bash -c " _ --context miku api-resources | _ get {{kind}} -A | _ get {{kind}} {{name}} > /tmp/y"
+# y does not work !
 
 def stream_helper():
     print("# Following execution streams are allowed:")
@@ -263,7 +285,11 @@ for item in all_cmds:
 
 kctlOptions = fetch_kubectl_options()
 kctl_allowed = ["api-resources", "get", "config", "exec"]
-internal = ["sh", "+", "-", "clean", "yaml-inject", "json-inject"]
+# cgc config get-contexts, TODO maybe speedup with _ cgc api-resources get ...
+# so one does not have to do _ cgc | _  api-resources | _ get ...
+# TODO cgc might have arguments
+# api-resources -> api-r, goes same as cgc might _ api-r get ...
+internal = ["sh", "+", "-", "clean", "yaml-inject", "json-inject", "cgc"]
 # TODO consider -O for _ formatting
 plugins = available_plugins()
 allowed = kctl_allowed + internal + plugins
@@ -278,6 +304,7 @@ cmd_kind = P_UNKNOWN
 cmd_name = P_UNKNOWN
 
 extracted = []
+extracted_args_position = []
 i = 0
 while i < len(args):
     if args[i] in kctlOptions:
@@ -303,6 +330,7 @@ while i < len(args):
         i += 1
         continue
     extracted.append(args[i])
+    extracted_args_position.append(i)
     i += 1
 
 get_extracted = []
@@ -329,14 +357,13 @@ if len(get_extracted) > 2:
 if len(get_extracted) > 3:
   cmd_name = get_extracted[3]
 
-
 if len(extracted) > 1 and extracted[1] in allowed:
     if len(extracted) > 1:
         if extracted[1] in prohibited:
             command = ["kubectl"] + args[1:]
             os.system(" ".join(command))
         elif extracted[1] in allowed:
-            if extracted[1] == "config" and extracted[2] == "get-contexts":
+            if (extracted[1] == "config" and extracted[2] == "get-contexts") or extracted[1] == "cgc":
                 if detect_output() == "pipe":
                     print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: config_get-contexts", flush=True)
                     outputPresent = "-o" in args[1:]
@@ -349,7 +376,10 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     print(
                         f"#{PLUGIN_NAME}:{P_WARNING}: Illegal pipe pass: to config get-contexts, ignored", flush=True
                     )
-                command = ["kubectl"] + args[1:]
+                if extracted[1] == "cgc":
+                    command = ["kubectl"] + ['config','get-contexts'] + args[2:]
+                else:
+                    command = ["kubectl"] + args[1:]
                 os.system(" ".join(command))
             elif extracted[1] in ["+", "-"]:
                 if detect_input() == "fifo":
@@ -414,25 +444,37 @@ if len(extracted) > 1 and extracted[1] in allowed:
                         if not line.startswith(f"#{PLUGIN_NAME}:"):
                             print(line, end="")
             elif extracted[1] == "yaml-inject":
+                in_ctx = P_UNKNOWN
+                plugin_content = True
                 for line in sys.stdin:
                     if line.startswith(f"#{PLUGIN_NAME}:"):
-                        if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:"):
-                            print("---\ncontext:" + line[len(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:"):], end="")
+                        plugin_content = True
+                        if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
+                            in_ctx = line[len(PLUGIN_NAME) + 4 + len(PIPE_CTX_IN):-1]
+                        #if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:"):
+                        #    print("---\ncontext:" + line[len(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:"):], end="")
                     else:
+                        if plugin_content and in_ctx != P_UNKNOWN:
+                            print(f"---\ncontext: {in_ctx}\n", end="")
+                        plugin_content = False
                         print(line, end="")
             elif extracted[1] == 'json-inject':
                 #print('{\n  "items": [')
                 inject = ""
+                in_ctx = P_UNKNOWN
+                plugin_content = True
                 line = sys.stdin.readline()
                 while line:
                     newline = sys.stdin.readline()
                     if line.startswith(f"#{PLUGIN_NAME}:"):
-                        if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:"):
+                        plugin_content = True
+                        if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
+                            in_ctx = line[len(PLUGIN_NAME) + 4 + len(PIPE_CTX_IN):-1]
                             inject = '"context": "' + line[len(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}:") + 1:-1] + '",'
                     else:  # TODO check json ident comparing to jq
                         if line == "{\n" and inject:
                             #print("    {\n      " + inject)
-                            print("{\n  " + inject)
+                            print("{\n    " + inject)
                         elif line == "}\n":
                             if newline:
                                 #print("    " + line[:-1] + ",")
@@ -450,6 +492,8 @@ if len(extracted) > 1 and extracted[1] in allowed:
                 if detect_input() == "fifo":
                     in_format = P_UNKNOWN
                     in_ctx = P_UNKNOWN
+                    in_ns = P_UNKNOWN
+                    in_kind = P_UNKNOWN
                     prevLine = ""
                     for line in sys.stdin:
                         if prevLine:
@@ -457,108 +501,212 @@ if len(extracted) > 1 and extracted[1] in allowed:
                         if line[-1] != "\n":
                             prevLine = line
                             continue
-                        if line[0:len(PLUGIN_NAME) + 9] == f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: ":
-                            in_format = line[len(PLUGIN_NAME) + 9:-1]
-                            if detect_output() == "pipe":
-                                print(line, end="", flush=True)
-                        elif line[0:len(PLUGIN_NAME) + 7] == f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: ":
-                            in_ctx = line[len(PLUGIN_NAME) + 7:-1]
-                            if detect_output() == "pipe":
-                                print(line, end="", flush=True)
+                        if line.startswith(f"#{PLUGIN_NAME}:"):
+                            if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: "):
+                                in_cmd = line[len(PLUGIN_NAME) + 4 + len(PIPE_CMD_IN):-1]
+                            elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: "):
+                                in_format = line[len(PLUGIN_NAME) + 4 + len(PIPE_FMT_IN):-1]
+                            elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: "):
+                                in_ns = line[len(PLUGIN_NAME) + 4 + len(PIPE_NS_IN):-1]
+                            elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_KIND_IN}: "):
+                                in_kind = line[len(PLUGIN_NAME) + 4 + len(PIPE_KIND_IN):-1]
+                            elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
+                                in_ctx = line[len(PLUGIN_NAME) + 4 + len(PIPE_CTX_IN):-1]
+                            line_num = 0
+                            continue
                         else:
-                            if in_format == "get":  # in cmd sh
-                                fields = line[:-1].split()
-                                name = fields[0]
-                                ns = fields[1]
-                                kind = fields[2]
+                            if in_cmd not in ["config_get-contexts","get","api-resources",P_UNKNOWN]:
+                                print(
+                                    f"#{PLUGIN_NAME}:{P_ERROR}: Illegal pipe pass: from {in_cmd} to api-resources"
+                                )
+                                stream_helper()
+                                break
+                            elif in_cmd == "get":  # in cmd sh, get
+                                if not len(extracted) > 2:
+                                    print(f"#{PLUGIN_NAME}:{P_ERROR}: get should have some arg")
+                                    sys.exit(1)
+                                if in_format in [P_DEFAULT, "wide"]:
+                                    # loading headers
+                                    if line_num == 0 and line.isupper():
+                                        position = []
+                                        length = []
+                                        columns = []
+                                        line_num += 1
+                                        words = line.split()
+                                        ofs = 0
+                                        for idx in range(len(words)):
+                                            pos = ofs + line[ofs:].index(words[idx])
+                                            position.append(pos)
+                                            columns.append(words[idx])
+                                            length.append(len(words[idx]))
+                                            ofs = pos + len(words[idx])
+                                        continue
+                                    else:
+                                        if len(position):
+                                            content = {}
+                                            item = ""
+                                            for idx in range(len(position)):
+                                                if idx + 1 != len(position):
+                                                    item = line[position[idx]:position[idx + 1] - 1]
+                                                else:
+                                                    item = line[position[idx]:-1]
+                                                content[columns[idx]] = item.rstrip()
+                                            line_num += 1
+                                        if 'KIND' in content:  # override value from pipe
+                                            in_kind = content['KIND']
+                                        in_name = P_UNKNOWN
+                                        if 'NAME' in content: # fixing kubectl non standard output for storageClass
+                                            if in_kind == 'StorageClass' and ' (default)' in content['NAME']:
+                                                in_name = content['NAME'][0:-10]
+                                            else:
+                                                in_name = content['NAME']
+                                        if 'NAMESPACE' in content:
+                                            in_ns = content['NAMESPACE']
                                 toCheck = " ".join(
                                     args[2:]
-                                )  # TODO verify args[2:] might not be guaranteed argument,
-                                # there might be other flags before sh ...
-                                # that might break executing
-                                # print(toCheck)
-                                # print(args)
-                                # HERE CONTINUE - add column/headers parsing to sh and exec
+                                )
                                 toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
-                                toExec = toExec.replace("{{name}}", name)
-                                os.environ["_NAME"] = name
+                                toExec = toExec.replace("{{name}}", in_name)
+                                os.environ[f"{PLUGIN_UNAME}_NAME"] = in_name
                                 # print(toExec)
                                 if in_ctx != P_UNKNOWN:
                                     toExec = toExec.replace("{{ctx}}", in_ctx)
                                     toExec = toExec.replace(
                                         "{{cctx}}", "--context " + in_ctx
                                     )
-                                    os.environ["_CTX"] = in_ctx
+                                    os.environ[f"{PLUGIN_UNAME}_CTX"] = in_ctx
                                 else:
                                     toExec = toExec.replace("{{ctx}}", "")
                                     toExec = toExec.replace("{{cctx}}", "")
-                                if ns != "<none>":
-                                    toExec = toExec.replace("{{ns}}", ns)
-                                    toExec = toExec.replace("{{cns}}", "-n " + ns)
-                                    os.environ["_NS"] = ns
+                                if in_ns != "<none>" and in_ns != P_UNKNOWN:
+                                    toExec = toExec.replace("{{ns}}", in_ns)
+                                    toExec = toExec.replace("{{cns}}", "-n " + in_ns)
+                                    os.environ[f"{PLUGIN_UNAME}_NS"] = in_ns
                                 else:
                                     toExec = toExec.replace("{{ns}}", "")
                                     toExec = toExec.replace("{{cns}}", "")
 
                                 if in_format != P_UNKNOWN:
-                                    os.environ["_INPUT"] = in_format
-                                toExec = toExec.replace("{{kind}}", kind)
-                                os.environ["_KIND"] = kind
-                                # print(toExec)
+                                    os.environ[f"{PLUGIN_UNAME}_INPUT"] = in_format
+                                if in_kind != P_UNKNOWN:
+                                    toExec = toExec.replace("{{kind}}", in_kind)
+                                    os.environ[f"{PLUGIN_UNAME}_KIND"] = in_kind
+                                    if in_kind == "ns":
+                                        os.environ[f"{PLUGIN_UNAME}_NS"] = in_name
                                 os.system(toExec)
-                            elif in_format == "config_get-contexts":  # in cmd sh
-                                fields = line[:-1].split()
-                                in_ctx = fields[0]
+                            elif in_cmd == "config_get-contexts":  # in cmd sh
+                                if in_format in [P_DEFAULT, "wide"]:
+                                    # loading headers
+                                    if line_num == 0 and line.isupper():
+                                        position = []
+                                        length = []
+                                        columns = []
+                                        line_num += 1
+                                        words = line.split()
+                                        ofs = 0
+                                        for idx in range(len(words)):
+                                            pos = ofs + line[ofs:].index(words[idx])
+                                            position.append(pos)
+                                            columns.append(words[idx])
+                                            length.append(len(words[idx]))
+                                            ofs = pos + len(words[idx])
+                                        continue
+                                    else:
+                                        if len(position):
+                                            content = {}
+                                            item = ""
+                                            for idx in range(len(position)):
+                                                if idx + 1 != len(position):
+                                                    item = line[position[idx]:position[idx + 1] - 1]
+                                                else:
+                                                    item = line[position[idx]:-1]
+                                                content[columns[idx]] = item.rstrip()
+                                        if 'KIND' in content:  # override value from pipe
+                                            in_kind = content['KIND']
+                                        in_name = P_UNKNOWN
+                                        if 'NAME' in content: # fixing kubectl non standard output for storageClass
+                                            if in_kind == 'StorageClass' and ' (default)' in content['NAME']:
+                                                in_name = content['NAME'][0:-10]
+                                            else:
+                                                in_name = content['NAME']
+                                        if 'NAMESPACE' in content:
+                                                in_ns = content['NAMESPACE']
+                                    toCheck = " ".join(args[2:])
+                                    toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                    toExec = toExec.replace("{{name}}", in_ctx)
 
-                                toCheck = " ".join(args[2:])
-                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
-                                toExec = toExec.replace("{{name}}", in_ctx)
-
-                                if in_ctx != P_UNKNOWN:
-                                    toExec = toExec.replace("{{ctx}}", in_ctx)
-                                    toExec = toExec.replace(
-                                        "{{cctx}}", "--context " + in_ctx
-                                    )
-                                else:
-                                    toExec = toExec.replace("{{ctx}}", "")
-                                    toExec = toExec.replace("{{cctx}}", "")
-                                print(toExec)
-                                # if detect_output() == 'pipe':
-                                # print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}",flush=True)
-                                # toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
-                                os.system(toExec)
-                            elif in_format == "api-resources":  # in cmd sh
-                                fields = line[:-1].split()
-                                print(fields)
-                                if len(fields) < 4:
-                                    print(f"#{PLUGIN_NAME}:{P_ERROR}: not enough fields {fields}")
-                                    continue
-                                name = fields[0]
-                                nsed = fields[-2]
-                                kind = fields[-1]
-                                toCheck = " ".join(args[2:])
-                                toExec = toCheck.replace(" _ ", " {{cctx}} ")
-                                toExec = toExec.replace("{{nsed}}", nsed)
-                                if in_ctx != P_UNKNOWN:
-                                    toExec = toExec.replace("{{ctx}}", in_ctx)
-                                    toExec = toExec.replace(
-                                        "{{cctx}}", "--context " + in_ctx
-                                    )
-                                else:
-                                    toExec = toExec.replace("{{ctx}}", "")
-                                    toExec = toExec.replace("{{cctx}}", "")
-                                toExec = toExec.replace("{{kind}}", kind)
-                                toExec = toExec.replace("{{name}}", name)
-                                if in_ctx != P_UNKNOWN:
-                                    print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}", flush=True)
-                                if detect_output() == "pipe":
-                                    toExec = (
-                                            toExec
-                                            + " -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers "
-                                    )
-                                os.system(toExec)
-
-                            else:  # unknown format, TODO prevent printing multiple error lines
+                                    if in_ctx != P_UNKNOWN:
+                                        toExec = toExec.replace("{{ctx}}", in_ctx)
+                                        toExec = toExec.replace(
+                                            "{{cctx}}", "--context " + in_ctx
+                                        )
+                                    else:
+                                        toExec = toExec.replace("{{ctx}}", "")
+                                        toExec = toExec.replace("{{cctx}}", "")
+                                    print(toExec)
+                                    # if detect_output() == 'pipe':
+                                    # print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}",flush=True)
+                                    # toExec = toExec + ' -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers '
+                                    os.system(toExec)# TODO
+                            elif in_cmd == "api-resources":  # in cmd sh # TODO
+                                if in_format in [P_DEFAULT, "wide"]:
+                                    # loading headers
+                                    if line_num == 0 and line.isupper():
+                                        position = []
+                                        length = []
+                                        columns = []
+                                        line_num += 1
+                                        words = line.split()
+                                        ofs = 0
+                                        for idx in range(len(words)):
+                                            pos = ofs + line[ofs:].index(words[idx])
+                                            position.append(pos)
+                                            columns.append(words[idx])
+                                            length.append(len(words[idx]))
+                                            ofs = pos + len(words[idx])
+                                        continue
+                                    else:
+                                        if len(position):
+                                            content = {}
+                                            item = ""
+                                            for idx in range(len(position)):
+                                                if idx + 1 != len(position):
+                                                    item = line[position[idx]:position[idx + 1] - 1]
+                                                else:
+                                                    item = line[position[idx]:-1]
+                                                content[columns[idx]] = item.rstrip()
+                                        if 'KIND' in content:  # override value from pipe
+                                            in_kind = content['KIND']
+                                        in_name = P_UNKNOWN
+                                        if 'NAME' in content: # fixing kubectl non standard output for storageClass
+                                            if in_kind == 'StorageClass' and ' (default)' in content['NAME']:
+                                                in_name = content['NAME'][0:-10]
+                                            else:
+                                                in_name = content['NAME']
+                                        if 'NAMESPACE' in content:
+                                            in_ns = content['NAMESPACE']
+                                    toCheck = " ".join(args[2:])
+                                    toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                    toExec = toExec.replace("{{nsed}}", nsed)
+                                    if in_ctx != P_UNKNOWN:
+                                        toExec = toExec.replace("{{ctx}}", in_ctx)
+                                        toExec = toExec.replace(
+                                            "{{cctx}}", "--context " + in_ctx
+                                        )
+                                    else:
+                                        toExec = toExec.replace("{{ctx}}", "")
+                                        toExec = toExec.replace("{{cctx}}", "")
+                                    toExec = toExec.replace("{{kind}}", kind)
+                                    toExec = toExec.replace("{{name}}", name)
+                                    if in_ctx != P_UNKNOWN:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}", flush=True)
+                                    if detect_output() == "pipe":
+                                        toExec = (
+                                                toExec
+                                                + " -o custom-columns=NAME:.metadata.name,NS:.metadata.namespace,KIND:.kind --no-headers "
+                                        )
+                                    os.system(toExec)
+                            else:  # unknown format
                                 print(
                                     f"#{PLUGIN_NAME}:{P_ERROR}: unknown format : {in_format}"
                                 )
@@ -759,8 +907,12 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     os.system(toExec)
                     pass
             elif extracted[1] == "get":  # in cmd command
+                #if not len(extracted) > 2:
+                #    print(f"#{PLUGIN_NAME}:{P_ERROR}: get should have some arg")
+                #    sys.exit(0)
                 if detect_input() == "fifo":
                     in_format = P_UNKNOWN
+                    in_prev_format = P_UNKNOWN
                     in_ctx = P_UNKNOWN
                     in_prev_ctx = P_UNKNOWN
                     in_cmd = P_UNKNOWN
@@ -768,10 +920,15 @@ if len(extracted) > 1 and extracted[1] in allowed:
                     in_kind = P_UNKNOWN
                     in_prev_kind = P_UNKNOWN
                     in_nsed = P_UNKNOWN
+                    in_prev_nsed = P_UNKNOWN
                     in_name = P_UNKNOWN
                     in_prev_name = P_UNKNOWN
                     in_ns = P_UNKNOWN
                     in_prev_ns = P_UNKNOWN
+                    in_get = P_UNKNOWN
+                    in_prev_get = P_UNKNOWN
+                    cmd_obj = args[extracted_args_position[1]+1]
+                    prev_cmd_obj = P_UNKNOWN
                     line_num = 0
                     prevLine = ""
                     position = []
@@ -787,10 +944,14 @@ if len(extracted) > 1 and extracted[1] in allowed:
                         if line.startswith(f"#{PLUGIN_NAME}:"):
                             if line.startswith(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: "):
                                 in_cmd = line[len(PLUGIN_NAME) + 4 + len(PIPE_CMD_IN):-1]
+                            if in_cmd == "get" and line.startswith(f"#{PLUGIN_NAME}:{PIPE_GET_IN}: "):
+                                in_get = line[len(PLUGIN_NAME) + 4 + len(PIPE_GET_IN):-1]
                             elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: "):
                                 in_format = line[len(PLUGIN_NAME) + 4 + len(PIPE_FMT_IN):-1]
                             elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: "):
                                 in_ns = line[len(PLUGIN_NAME) + 4 + len(PIPE_NS_IN):-1]
+                            elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_NSED_IN}: "):
+                                in_nsed = line[len(PLUGIN_NAME) + 4 + len(PIPE_NSED_IN):-1]
                             elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_KIND_IN}: "):
                                 in_kind = line[len(PLUGIN_NAME) + 4 + len(PIPE_KIND_IN):-1]
                             elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: "):
@@ -862,9 +1023,8 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                     )
                                 print(toExec)
                                 os.system(toExec)
-                            elif in_cmd == "get":  # in cmd get
+                            elif in_cmd == "get":  # in cmd get, prev get
                                 if in_format in [P_DEFAULT, "wide"]:
-                                    # loading headers
                                     if line_num == 0 and line.isupper():
                                         position = []
                                         length = []
@@ -889,23 +1049,41 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                                 else:
                                                     item = line[position[idx]:-1]
                                                 content[columns[idx]] = item.rstrip()
-                                        if 'KIND' in content:  # override value from pipe
-                                            in_kind = content['KIND']
-                                        in_name = P_UNKNOWN
-                                        if 'NAME' in content: # fixing kubectl non standard output for storageClass
-                                            if in_kind == 'StorageClass' and ' (default)' in content['NAME']:
-                                                in_name = content['NAME'][0:-10]
+                                        line_num += 1
+                                    if line_num > 2 and in_nsed == 'false' and in_get == "ns":
+                                        continue
+                                    in_name = P_UNKNOWN
+                                    if in_get != P_UNKNOWN:
+                                        if 'NAME' in content:
+                                            if in_get in ['ns','namespace']: # TODO issue ns vs namespace,
+                                                content['NAMESPACE'] = content['NAME']
+                                                content['NS'] = content['NAME']
                                             else:
-                                                in_name = content['NAME']
-                                        if 'NAMESPACE' in content:
-                                            in_ns = content['NAMESPACE']
+                                                content[in_get.upper()] = content['NAME']
+                                            in_name = content['NAME']
+                                        if 'KIND' not in content and in_kind != P_UNKNOWN:
+                                            content['KIND'] = in_kind # TODO separate pipe_in_kind from in_kind
+                                    if 'KIND' in content:  # override value from pipe
+                                        in_kind = content['KIND']
+                                    if 'NAME' in content: # fixing kubectl non standard output for storageClass
+                                        if in_kind == 'StorageClass' and ' (default)' in content['NAME']:
+                                            in_name = content['NAME'][0:-10]
+                                        else:
+                                            in_name = content['NAME']
+                                    if 'NAMESPACE' in content:
+                                        in_ns = content['NAMESPACE']
+                                    #print(content)
                                 elif in_format == "name":  # name does not support kind, nsed
-                                    in_name = line[:-1]
+                                    print(f"#{PLUGIN_NAME}:{P_ERROR}: get format name not supported")
+                                    break
                                 if args[0].split("/")[-1] == P_SHORTCUT:
                                     toCheck = " ".join(["kubectl", P_SHORTCUT] + args[1:])
                                 else:
                                     toCheck = " ".join(["kubectl"] + args[1:])
-                                toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
+                                if in_nsed == 'false':
+                                    toExec = toCheck.replace(" _ ", " {{cctx}} ")
+                                else:
+                                    toExec = toCheck.replace(" _ ", " {{cctx}} {{cns}} ")
                                 toExec = toExec.replace("{{name}}", in_name)
 
                                 if in_ctx != P_UNKNOWN:
@@ -946,6 +1124,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                     # if unusual output is used then force headers ie remove no-headers
                                     if noheaderPresent:
                                         toExec = toExec.replace("--no-headers", "")
+                                print(f"#{PLUGIN_NAME}:exec: {toExec}", flush=True)
                                 os.system(toExec)
                             elif in_cmd == "api-resources":  # in cmd get
                                 if in_format in [P_DEFAULT, "wide"]:
@@ -980,7 +1159,8 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                         if 'NAMESPACED' in content:
                                             in_nsed = content['NAMESPACED']
                                 elif in_format == "name":  # name does not support kind, nsed
-                                    in_name = line[:-1]
+                                    print(f"#{PLUGIN_NAME}:{P_ERROR}: api-resources format name not supported")
+                                    break
                                 if detect_output() == "pipe" and in_ctx != P_UNKNOWN:
                                     print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}", flush=True)
                                 if args[0].split("/")[-1] == P_SHORTCUT:
@@ -1003,25 +1183,35 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                 if in_name != P_UNKNOWN:
                                     toExec = toExec.replace("{{name}}", in_name)
                                 if detect_output() == "pipe":
-                                    print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: get", flush=True)
-                                    if in_ns != P_UNKNOWN and in_prev_ns != in_ns:
-                                        print(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: {in_ns}", flush=True)
-                                        in_ns_ctx = in_ns
-                                    if in_ns != P_UNKNOWN and in_prev_ns != in_ns:
-                                        print(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: {in_ns}", flush=True)
-                                        in_ns_ctx = in_ns
+                                    if in_cmd != P_UNKNOWN and in_prev_cmd != in_cmd:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: get", flush=True)
+                                        in_prev_cmd = in_cmd
+                                    if cmd_obj != P_UNKNOWN and prev_cmd_obj != cmd_obj:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_GET_IN}: {cmd_obj}", flush=True)
+                                        prev_cmd_obj = cmd_obj
                                     if in_ctx != P_UNKNOWN and in_prev_ctx != in_ctx:
                                         print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {in_ctx}", flush=True)
                                         in_prev_ctx = in_ctx
+                                    if in_ns != P_UNKNOWN and in_prev_ns != in_ns:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: {in_ns}", flush=True)
+                                        in_prev_ns = in_ns
+                                    if in_nsed != P_UNKNOWN and in_prev_nsed != in_nsed:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_NSED_IN}: {in_nsed}", flush=True)
+                                        in_prev_nsed = in_nsed
                                     if in_kind != P_UNKNOWN and in_prev_kind != in_kind:
                                         print(f"#{PLUGIN_NAME}:{PIPE_KIND_IN}: {in_kind}", flush=True)
                                         in_prev_kind = in_kind
                                     outputPresent = "-o" in args[1:]
                                     if outputPresent:
                                         outputOptions = args[1:][args[1:].index("-o") + 1]
-                                        print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {outputOptions}", flush=True)
+                                        if in_prev_format != P_UNKNOWN:
+                                            print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {outputOptions}", flush=True)
+                                            in_prev_format = outputOptions
                                     else:
-                                        print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {P_DEFAULT}", flush=True)
+                                        if in_prev_format != P_DEFAULT:
+                                            print(f"#{PLUGIN_NAME}:{PIPE_FMT_IN}: {P_DEFAULT}", flush=True)
+                                            in_prev_format = P_DEFAULT
+
                                 #print(toExec)
                                 os.system(toExec)
                             else:  # cmd get : unknown format, best effort
@@ -1120,8 +1310,10 @@ if len(extracted) > 1 and extracted[1] in allowed:
                         print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: get", flush=True)
                         if cmd_ctx != P_UNKNOWN:
                             print(f"#{PLUGIN_NAME}:{PIPE_CTX_IN}: {cmd_ctx}", flush=True)
+                        # TODO cmd_ns not needed if get ns is used
                         if cmd_ns != P_UNKNOWN:
-                            print(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: {cmd_ns}", flush=True)
+                            if len(extracted) > 2 and extracted[2] != "ns":
+                               print(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: {cmd_ns}", flush=True)
                         if cmd_kind != P_UNKNOWN:
                             print(f"#{PLUGIN_NAME}:{PIPE_KIND_IN}: {cmd_kind}", flush=True)
                         if cmd_name != P_UNKNOWN:
@@ -1226,6 +1418,8 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                 # TODO decide what could be used
                                 if detect_output() == "pipe":
                                     print(f"#{PLUGIN_NAME}:{PIPE_CMD_IN}: api-resources", flush=True)
+                                    if cmd_ns != P_UNKNOWN:
+                                        print(f"#{PLUGIN_NAME}:{PIPE_NS_IN}: {cmd_ns}", flush=True)
                                     outputPresent = "-o" in args[1:]
                                     if outputPresent:
                                         outputOptions = args[1:][args[1:].index("-o") + 1] # didn't check args len
@@ -1236,7 +1430,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                                     toExec = toExec + " --verbs=get,list"
                                 print(toExec)
                                 os.system(toExec)
-                            else:  # api resources, not default or name format, no in cmd, best effort
+                            else:  # api resources, not known format, no in cmd, best effort
                                 if detect_input() == "fifo":
                                     if prevLine:
                                         line = prevLine + line
@@ -1333,7 +1527,7 @@ if len(extracted) > 1 and extracted[1] in allowed:
                 os.system(" ".join(command))
         else:
             print(
-                f"#{PLUGIN_NAME}:{P_WARNING}: unhandled command {extracted[1]}, not prohibited , not asslowed", flush=True
+                f"#{PLUGIN_NAME}:{P_WARNING}: unhandled command {extracted[1]}, not prohibited , not allowed", flush=True
             )
             command = args[1:]
             os.system(" ".join(command))
