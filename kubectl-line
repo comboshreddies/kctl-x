@@ -63,6 +63,7 @@ P_SHORTCUT = os.getenv("KUBECTL_PLUGIN_SHORTCUT") or "_"
 #
 # TO CONSIDER add command caching for fun
 #
+# TODO / TO FIX _ -n test-run top pod | _ sh echo \$LINE_NAM
 
 def stream_helper():
     print("# Following execution streams are allowed:")
@@ -424,7 +425,7 @@ def generate_to_exec(p_in, toCheck):
 def main_loop(args):
     global P_SHORTCUT
     all_cmds = fetch_kubectl_cmds()
-    kctl_allowed = ["api-resources", "get", "config", "exec"]
+    kctl_allowed = ["api-resources", "get", "config", "exec", "top"]
     prohibited = []
     for item in all_cmds:
         if item not in kctl_allowed:
@@ -642,10 +643,10 @@ def main_loop(args):
                     line_num = 0
                     continue
                 else:
-                    if p_in['cmd'] not in ["config_get-contexts","get","api-resources","sh","exec",P_UNKNOWN] \
+                    if p_in['cmd'] not in ["config_get-contexts","get","api-resources","sh","exec","top",P_UNKNOWN] \
                             and not p_in['cmd'].startswith("plugin:"):
                         l_print_t(P_ERROR,
-                            f"Illegal pipe pass: from {p_in['cmd']} to api-resources"
+                            f"Illegal pipe pass: from {p_in['cmd']} to {command}"
                         )
                         stream_helper()
                         break
@@ -824,6 +825,13 @@ def main_loop(args):
                         if line_num == 0 and line.isupper():
                             line_num += 1
                             position, columns = read_header_line(line)
+                            continue
+                        elif line_num == 0 and p_in['cmd'] == "top":
+                            line_num += 1
+                            modified_line = line.upper()
+                            modified_line = modified_line.replace('(','')
+                            modified_line = modified_line.replace(')', '')
+                            position, columns = read_header_line(modified_line)
                             continue
                         else:  # loading fields
                             content = read_row_from_line(position, columns, line)
