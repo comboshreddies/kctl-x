@@ -41,21 +41,34 @@ P_EXEC = "exec"
 # - takes context as #pipe
 # - provides p_in['kind'] as column KIND:
 
+# TODO make code change for
+# ?f:ctx -> --context {{ctx}} but conditional , ? -> conditional, with flag
+# f:ctx -> --context {{ctx}} but not conditional
+# ?:ctx -> {{ctx}} conditional
+# ctx -> {{ctx}}
+# flags should be available for context, kubeconfig, namespace
+# name and kind should not have conditionals nor flags
 # TODO improve help, add help command
 # TODO fix +-
-# TODO ensure passing more arguments
-# from all global options currently only --kubeconfig, -n , --context are passed
+# TODO ensure passing more kubectl options arguments
+# from all global options currently only --kubeconfig, -n --namespace , --context are passed
 # TODO if those are passed and there are explicit --context -n we should respect explicit
 #
 # TO CONSIDER add command caching for fun (prevent running too much get ns)
 # TO CONSIDER -O for _ formatting (adding switches for extra formating)
 # TO CONSIDER additional clean arguments like clean columns
-# TO CONSIDER name from line to flow or cross
+# TO CONSIDER name from line to flow or cross or underscore or trans
 #
 # TO TEST
-# time /bin/bash -c " _ kc-inject ~/.kube/config | _ cgc | _ --context miku api-resources | _ get ns | _ get {{kind}} | _ get {{kind}} {{name}} > /tmp/x"
-# time /bin/bash -c " _ kc-inject ~/.kube/config | _ cgc | _ --context miku api-resources | _ get {{kind}} -A | _ get {{kind}} {{name}} > /tmp/y"
+# time /bin/bash -c "
+# _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get ns|_ get {{kind}}|_ get {{kind}} {{name}}
+# > /tmp/x"
+# time /bin/bash -c "
+# _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get {{kind}} -A|_ get {{kind}} {{name}}
+# > /tmp/y"
 
+# TO FIX
+# _ --context minikube  -n test-run get pod | _ sh env | grep LINE_ - shows LINE__UNKNOWN_
 
 import sys
 import os
@@ -67,6 +80,126 @@ import re
 P_DEBUG = os.getenv(f"{PLUGIN_UNAME}_DEBUG")
 P_SHORTCUT = os.getenv("KUBECTL_PLUGIN_SHORTCUT") or "_"
 
+def examples_help():
+    print(f"Let's assume that you have named this plugin {PLUGIN_UNAME} as kubectl-_, for start you could:")
+    print("---")
+    print("$ kubectl _ api-r")
+    print("or just")
+    print("$ _ api-r")
+    print("---")
+    print("Example of simple piped usage:")
+    print("$ _ -n test-run get pod -l app=nginx | _ -n test-run get pod {{name}}")
+    print("or more generic:")
+    print("$ _ -n test-run get pod -l app=nginx | _ get {{kind}} {{name}}")
+    print("Note: -n test-run will be passed through pipe and used in command to right")
+    print("---")
+    print("You can use shortcut for api-resources")
+    print("$ _ api-r")
+    print("---")
+    print("Now you can list all objects in your default cluster:")
+    print("$ _ api-r | _ get {{kind}} -A")
+    print("For example you can list all objects in cluster with specific label:")
+    print("$ _ api-r | _ get {{kind}} -A -l app=nginx")
+    print("---")
+    print("By setting debug environment varible you can get executed commands on stderr:")
+    print(f"$ export {PLUGIN_UNAME}_DEBUG=true")
+    print("$ _ api-r | _ get {{kind}} -A")
+    print("You will now get more lines that start with # with commands that are executed.")
+    print("---")
+    print("With cgc you can make shortcut for config get-contexts, so you can dump")
+    print("all objects in all clusters that are listed with config get-contexts:")
+    print("$ _ cgc | _  api-r | _ get {{kind}} -A -l app=nginx | _ get {{kind}} {{name}}")
+    print("or you can list all objects, if you're not using -l :")
+    print("$ _ cgc | _  api-r | _ get {{kind}} -A -l app=nginx | _ get {{kind}} {{name}}")
+    print("or you can have dump all objects in yaml:")
+    print("$ _ cgc | _  api-r | _ get {{kind}} -A -l app=nginx | _ get {{kind}} {{name}} -o yaml")
+    print("or you can additional context injector in each yaml with:")
+    print("$ _ cgc | _  api-r | _ get {{kind}} -A -l app=nginx | _ get {{kind}} {{name}} -o yaml | _ yaml-inject")
+    print("There is json context inject for get with -o json format.")
+    print("---")
+    print("Approach above first listed all contexts (cgc), then it listed all resources (api-r), then for each")
+    print("resource kind listed (get) each resource kind in all namespaces (using -A flag)")
+    print("Then for each kind/namespace/name dumped exact object into yaml, then injected context.")
+    print("You might like context injection as you might find multiple objects within multiple contexts/clusters")
+    print("and you won't be able to differentiate those, so context injection field might be usefull.")
+    print("---")
+    print("Listing all resource listing can be done in other way with:")
+    print("$ _ cgc|_ api-r|_ get ns|_ get {{kind}}|_ get {{kind}} {{name}}")
+    print("This time there is no get {{kind}} -A - we're not getting all kinds of resources in all namespaces")
+    print("In this case after listing all clusters and all resources")
+    print("there is a list of all namespaces. Then for each namespace/kind(resource) objects are listed.")
+    print("From that list of objects of specific kind and namespace, each object ({{name}}) is listed")
+    print("Using this plugin one way or another to list all resources, yet in some cases one or other")
+    print("approach might be faster.")
+    print("---")
+    print("If you have multiple kube config files, then you can use kc-inject command:")
+    print("$ _ kc-inject kc_file1 kc_file2 | _ cgc | _  api-r | _ get {{kind}} -A  ")
+    print("this will list all contexts from each of kubeconfig files, and list all resources of each kind")
+    print("for each cluster context in each kc_file.")
+    print("---")
+    print("kc-inject operates on level of --kubeconfig kubectl param and passes that info along pipe stream")
+    print("cgc is shortcut for config get-contexts, it lists all contexts for given --kubeconfig file")
+    print("and passes --context param along pipe stream")
+    print("_ api-r is shortcut for api-resources, it list all kinds of objects available incluster")
+    print("and passes objects as a {{kind}} parameter along pipe stream")
+    print("_ get ns, for given kubeconfig/context will show namespaces, and passes namespace {{ns}} along pipe stream")
+    print("_ get {{kind}} will show all objects, and if there is kubeconfig/context/namespace/kind present")
+    print("it will silently use those, so your _ get {{kind}} might expand to something like")
+    print("kubectl --kubeconfig kcfile --context clstr1 -n utils get pod")
+    print("---")
+    print("_ plugin behaves differently if it detects pipe on left (input) or right (output)")
+    print("so for example you can")
+    print("$ _ api-r > file")
+    print("then look what output is, and then")
+    print("$ cat file | _ get {{kind}} -A")
+    print("or")
+    print("$ _ get {{kind}} -A < file")
+    print("---")
+    print("If you want to break out of kubectl pipe stream you can use _ sh, with:")
+    print("$ _ api-r | _ sh echo {{kind}}")
+    print("You can echo all kinds, or run some custom script for each {{kind}}")
+    print("with:")
+    print("$ _ --context minikube get ns | _ sh echo  {{ctx}} {{ns}}")
+    print("You will print both context and namespace.")
+    print("If context is available it can be used as {{ctx}}")
+    print("If namespace is avaialble it can be used as {{ns}}")
+    print("If kind is available it can be used as {{kind}}")
+    print("If object name is avaialble it can be used as {{name}}")
+    print("$ _ --context minikube -n test-run get pod | _ sh echo {{ctx}} {{ns}} {{kind}} {{name}}")
+    print("this will print fields, but this:")
+    print("$ _ -n test-run get pod | _ sh echo {{ctx}} {{ns}} {{kind}} {{name}}")
+    print("will not render {{ctx}} as there is no --context flag")
+    print("---")
+    print("sh command also sets environment so you can do")
+    print("$ _ api-r | _ get {{kind}} -A | _ sh env | grep " + PLUGIN_NAME + "_ ")
+    print("this will show all env variables that start with plugin name on each sh execution")
+    print("---")
+
+
+def instruction_help(instructions):
+    print("---------------")
+    info = {
+    "+" : "select lines containing argument, + <argument>",
+    "-" : "remove lines containing argument, - <argument>",
+    "api-r" : "shortuct for api-resources",
+    "api-resources" : "kubectl api resources command",
+    "cgc" : "shortcut for config get-contexts kubectl command",
+    "clean" : "remove comment lines that are this plugin generates",
+    "config" : "kubectl config but only config get-contexts is supported",
+    "examples" : "show some examples",
+    "exec" : "kubectl exec command",
+    "get" : "kubectl get command",
+    "help" : "this help",
+    "json-inject" : "injects context tag into json file, if get/-o json is used",
+    "kc-inject" : "injects all contexts from all kubeconfig referenced files",
+    "sh" : "executes shell with environment variables set, along with name replacement",
+    "top" : "kubectl top command",
+    "yaml-inject" : "injects context into yaml file, if get/-o yaml is used"
+    }
+    instructions.sort()
+    for i in instructions:
+        print(f"{i} : " + info.get(i))
+    print("---------------")
 
 def stream_helper():
     print("# Following execution streams are allowed:")
@@ -160,7 +293,10 @@ def detect_in_plugin_content(pin, line):
     elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_KC_IN}: "):
         pin["kc"] = line[len(PLUGIN_NAME) + 4 + len(PIPE_KC_IN) : -1]
     elif pin["cmd"] == "get" and line.startswith(f"#{PLUGIN_NAME}:{PIPE_OPT_IN}: "):
-        pin["opt"] += line[len(PLUGIN_NAME) + 4 + len(PIPE_OPT_IN) : -1]
+        if "opt" in pin:
+            pin["opt"] += line[len(PLUGIN_NAME) + 4 + len(PIPE_OPT_IN) : -1]
+        else:
+            pin["opt"] = line[len(PLUGIN_NAME) + 4 + len(PIPE_OPT_IN): -1]
     if pin["cmd"] == "get" and line.startswith(f"#{PLUGIN_NAME}:{PIPE_GET_IN}: "):
         pin["get"] = line[len(PLUGIN_NAME) + 4 + len(PIPE_GET_IN) : -1]
     return pin
@@ -344,11 +480,14 @@ def extract_get_options(context, args, kctlOpts):
     while i < len(args):
         if args[i] in kctlOpts:
             i += 2
+            continue
         if args[i] in get_opts:
-            if args[i] == "-A":
+            if args[i] in ["-n","--namespace"] and len(args) > i + 1:
+                i += 2
+            elif args[i] == "-A": # edge case -A does not take param, should be handled in some other way
                 flags += args[i]
                 i += 1
-            else:
+            elif len(args) > i + 1:
                 flags += f"{args[i]} {args[i+1]}"
                 i += 2
             continue
@@ -413,7 +552,7 @@ def generate_to_exec(p_in, toCheck):
     if p_in["ctx"] == P_UNKNOWN:  # no ctx
         if p_in["kc"] == P_UNKNOWN:  # no ctx, kc
             if p_in["nsed"] == "false":  # no ctx, no kc, no nsed
-                toExec = toCheck
+                toExec = toCheck.replace(" _", "")
             else:  # nsed true
                 toExec = toCheck.replace(" _ ", " {{cns}} ")
                 toExec = toExec.replace("{{nsed}}", p_in["nsed"])
@@ -496,6 +635,7 @@ def main_loop(args):
         "api-r",
         "kc-inject",
         "help",
+        "examples"
     ]
     plugins = available_plugins()
     allowed = kctl_allowed + internal + plugins
@@ -639,7 +779,6 @@ def main_loop(args):
                 if line[-1] != "\n":
                     prevLine = line
                     continue
-
                 if line[0 : len(PLUGIN_NAME) + 2] == f"#{PLUGIN_NAME}:":
                     print(line, end="")
                 else:
@@ -659,8 +798,10 @@ def main_loop(args):
             l_print_t(P_ERROR, f"no pipe input for {command}")
     elif command == "help":
         # not showing plugins, but they are available
-        print(kctl_allowed + internal)
+        instruction_help(kctl_allowed + internal)
         stream_helper()
+    elif command == "examples":
+        examples_help()
     elif command == "clean":
         if cmd["kind"] == "headers":
             for line in sys.stdin:
@@ -1093,8 +1234,8 @@ def main_loop(args):
             system_exec(" ".join(execArgs))
     elif command in ["api-resources", "api-r"]:  # cmd api-resources
         if command == "api-r":
-            args[1] = "api-resources"
             command = "api-resources"
+            args[extracted_args_position[1]] = "api-resources"
         if detect_input() == "fifo":
             for line in sys.stdin:
                 if prevLine:
