@@ -7,6 +7,7 @@ PIPE_KC_IN = "pipe-kc-in"
 PIPE_CTX_IN = "pipe-ctx-in"
 PIPE_FMT_IN = "pipe-fmt-in"
 PIPE_NS_IN = "pipe-ns-in"
+PIPE_OPT_IN = "pipe-opt-in"
 PIPE_NSED_IN = "pipe-nsed-in"
 PIPE_KIND_IN = "pipe-kind-in"
 PIPE_NAME_IN = "pipe-name-in"
@@ -40,6 +41,21 @@ P_EXEC = "exec"
 # - takes context as #pipe
 # - provides p_in['kind'] as column KIND:
 
+# TODO improve help, add help command
+# TODO fix +-
+# TODO ensure passing more arguments
+# from all global options currently only --kubeconfig, -n , --context are passed
+# TODO if those are passed and there are explicit --context -n we should respect explicit
+#
+# TO CONSIDER add command caching for fun (prevent running too much get ns)
+# TO CONSIDER -O for _ formatting (adding switches for extra formating)
+# TO CONSIDER additional clean arguments like clean columns
+# TO CONSIDER name from line to flow or cross
+#
+# TO TEST
+# time /bin/bash -c " _ kc-inject ~/.kube/config | _ cgc | _ --context miku api-resources | _ get ns | _ get {{kind}} | _ get {{kind}} {{name}} > /tmp/x"
+# time /bin/bash -c " _ kc-inject ~/.kube/config | _ cgc | _ --context miku api-resources | _ get {{kind}} -A | _ get {{kind}} {{name}} > /tmp/y"
+
 
 import sys
 import os
@@ -51,19 +67,6 @@ import re
 P_DEBUG = os.getenv(f"{PLUGIN_UNAME}_DEBUG")
 P_SHORTCUT = os.getenv("KUBECTL_PLUGIN_SHORTCUT") or "_"
 
-# TODO ensure passing more arguments
-# all candidated for reconstruction (passing to right) currently only -n , --context are passed
-# TODO kubeconfig is not passed , PIPE_KC_IN, or like PIPE_OPT_IN (cumulative for multiple passed options)
-# TODO consider passing label selector across pipes , like PIPE_LL_IN for label
-
-# TODO if those are passed and there are explicit --context -n  we should respect explicit
-# TO TEST
-# time /bin/bash -c " _ --context miku api-resources | _ get ns | _ get {{kind}} | _ get {{kind}} {{name}} > /tmp/x"
-# time /bin/bash -c " _ --context miku api-resources | _ get {{kind}} -A | _ get {{kind}} {{name}} > /tmp/y"
-#
-# TO CONSIDER add command caching for fun
-#
-# TODO / TO FIX _ -n test-run top pod | _ sh echo \$LINE_NAM
 
 def stream_helper():
     print("# Following execution streams are allowed:")
@@ -145,6 +148,8 @@ def detect_in_plugin_content(pin,line):
         pin['nsed'] = line[len(PLUGIN_NAME) + 4 + len(PIPE_NSED_IN):-1]
     elif line.startswith(f"#{PLUGIN_NAME}:{PIPE_KC_IN}: "):
         pin['kc'] = line[len(PLUGIN_NAME) + 4 + len(PIPE_KC_IN):-1]
+    elif pin['cmd'] == "get" and line.startswith(f"#{PLUGIN_NAME}:{PIPE_OPT_IN}: "):
+        pin['opt'] += line[len(PLUGIN_NAME) + 4 + len(PIPE_OPT_IN):-1]
     if pin['cmd'] == "get" and line.startswith(f"#{PLUGIN_NAME}:{PIPE_GET_IN}: "):
         pin['get'] = line[len(PLUGIN_NAME) + 4 + len(PIPE_GET_IN):-1]
     return pin
@@ -301,25 +306,38 @@ def pass_output_format(args):
                     return
     l_print_t(PIPE_FMT_IN, f"{P_DEFAULT}")
 
-def extract_get_options(context,extracted,kctlOpts):
+def extract_get_options(context,args,kctlOpts):
     get_extracted = []
+    flags = ""
     if context == P_UNKNOWN:
         get_opts = fetch_kubectl_cmd_options("get")
     else:
         get_opts = fetch_kubectl_cmd_options("get",context=context)
     i = 0
-    while i < len(extracted):
-        if extracted[i] in get_opts:
+    while i < len(args):
+        if args[i] in kctlOpts:
             i += 2
-            continue
-        if "=" in extracted[i]:
-            eq_index = extracted[i][:-1].index("=")
-            if args[i][:eq_index] in kctlOpts:
+        if args[i] in get_opts:
+            if args[i] == "-A":
+                flags += args[i]
                 i += 1
-                continue
-        get_extracted.append(extracted[i])
+            else:
+                flags += f"{args[i]} {args[i+1]}"
+                i += 2
+            continue
+        if "=" in args[i]:
+            if "=" in args[i]:
+                eq_index = args[i][:-1].index("=")
+                if args[i][:eq_index] in kctlOpts:
+                    i += 1
+                    continue
+                if args[i][:eq_index] in get_opts:
+                    flags += args[i][eq_index+1:]
+                    i += 1
+                    continue
+        get_extracted.append(args[i])
         i += 1
-    return get_extracted
+    return get_extracted,flags
 
 def extract_args(args,cmd,kctlOpts):
     extracted = []
@@ -337,7 +355,7 @@ def extract_args(args,cmd,kctlOpts):
             continue
         if "=" in args[i][:-1]:
             eq_index = args[i][:-1].index("=")
-            if args[i][:eq_index] in kctlOptions:
+            if args[i][:eq_index] in kctlOpts:
                 if args[i][:eq_index] in ['-n','--namespace']:
                     cmd['ns'] = args[i][eq_index+1]
                 if args[i][:eq_index] == '--context':
@@ -346,6 +364,11 @@ def extract_args(args,cmd,kctlOpts):
                     cmd['kc'] = args[i][eq_index+1]
             i += 1
             continue
+        if args[i][1] == '-':
+            if '=' in args[i]:
+                i += 1
+            else:
+                i += 2
         if args[i][0:2] == "{{" and args[i][-2:] == "}}":
             i += 1
             continue
@@ -366,7 +389,7 @@ def generate_to_exec(p_in, toCheck):
                     toExec = toCheck.replace(" _ ", " {{cns}} ")
                     toExec = toExec.replace("{{nsed}}", p_in['nsed'])
                     if p_in['ns'] != P_UNKNOWN and p_in['ns'] != "<none>":
-                        toExec = toExec.replace("{{cns}}", p_in['ns'])
+                        toExec = toExec.replace("{{cns}}", "-n " + p_in['ns'])
                         toExec = toExec.replace("{{ns}}", p_in['ns'])
                     else:
                         toExec = toExec.replace("{{cns}}","")
@@ -432,8 +455,7 @@ def main_loop(args):
             prohibited.append(item)
 
     kctlOptions = fetch_kubectl_options()
-    internal = ["sh", "+", "-", "clean", "yaml-inject", "json-inject", "cgc","api-r", "kc-inject"]
-    # TODO consider -O for _ formatting
+    internal = ["sh", "+", "-", "clean", "yaml-inject", "json-inject", "cgc","api-r", "kc-inject","help"]
     plugins = available_plugins()
     allowed = kctl_allowed + internal + plugins
 
@@ -442,8 +464,9 @@ def main_loop(args):
     extracted,extracted_args_position,cmd = extract_args(args,cmd,kctlOptions)
 
     get_extracted = []
+    get_flags = ""
     if extracted[1] == "get":
-        get_extracted = extract_get_options(cmd['ctx'], extracted,kctlOptions)
+        get_extracted, get_flags = extract_get_options(cmd['ctx'], args,kctlOptions)
         if len(get_extracted) > 2:
             cmd['kind'] = get_extracted[2]
         if len(get_extracted) > 3:
@@ -463,7 +486,6 @@ def main_loop(args):
     if not command in allowed:
         l_print_t(P_ERROR,f"unhandled command {command}, not prohibited, not allowed")
         execArgs = ['kubectl'] + args[1:]
-        print(execArgs)
         system_exec(" ".join(execArgs))
         return -3
 
@@ -575,22 +597,15 @@ def main_loop(args):
                                 break
         else:
             l_print_t(P_ERROR,f"no pipe input for {command}")
+    elif command == "help":
+        # not showing plugins, but they are available
+        print(kctl_allowed + internal)
+        stream_helper()
     elif command == 'clean':
         if cmd['kind'] == "headers":
             for line in sys.stdin:
                 if not line.isupper() and not line.startswith(f"#{PLUGIN_NAME}:"):
                     print(line,end="")
-       # TODO additional clean arguments like clean columns
-       #  elif cmd['kind'] == "columns": # TODO
-       #      columns_to_clean = extracted[3:]
-       #      line_num = 0
-       #      for line in sys.stdin:
-       #          if line_num == 0 and line.isupper():
-       #              line_num += 1
-       #              continue
-       #          else:  # loading fields
-       #              content = read_row_from_line(position, columns,line)
-       #              line_num += 1
         else:
             for line in sys.stdin:
                 if not line.startswith(f"#{PLUGIN_NAME}:"):
@@ -619,7 +634,7 @@ def main_loop(args):
                     p_in = detect_in_plugin_content(p_in, line)
                     if p_in['ctx'] != P_UNKNOWN:
                         inject = '"context": "' + p_in['ctx'] + '",'
-            else:  ## TODO check json ident comparing to jq
+            else:
                 if line == "{\n" and inject:
                     print("{\n    " + inject)
                 elif line == "}\n":
@@ -688,6 +703,8 @@ def main_loop(args):
                                 prev_p_in['kind'] = p_in['kind']
                             if p_in['kc'] != P_UNKNOWN:
                                 l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                            if get_flags:
+                                l_print_t(PIPE_OPT_IN, f"{i} {get_flags[i]}")
                         for item in content:
                             toExec = toExec.replace("{{"+item+"}}", content[item])
                         system_exec(toExec)
@@ -707,7 +724,7 @@ def main_loop(args):
                             p_in['name'] = P_UNKNOWN
                             if p_in['cmd'] != P_UNKNOWN:
                                 if 'NAME' in content:
-                                    if p_in['kind'] in ['ns','namespace']: # TODO issue ns vs namespace,
+                                    if p_in['kind'] in ['ns','namespace']:
                                         content['NAMESPACE'] = content['NAME']
                                         content['NS'] = content['NAME']
                                     else:
@@ -751,6 +768,8 @@ def main_loop(args):
                                 prev_p_in['kind'] = p_in['kind']
                             if p_in['kc'] != P_UNKNOWN:
                                 l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                            if get_flags:
+                                l_print_t(PIPE_OPT_IN, f"{get_flags}")
                             execWords = toExec.split()
                             noheaderPresent = "--no-headers" in execWords
                             pass_output_format(args)
@@ -817,6 +836,8 @@ def main_loop(args):
                                 prev_p_in['kind'] = p_in['kind']
                             if p_in['kc'] != P_UNKNOWN:
                                 l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                            if get_flags:
+                                l_print_t(PIPE_OPT_IN, f"{get_flags}")
                             pass_output_format(args) # TO CONSIDER should w tack prev_p_in['format']
                         for item in content:
                             toExec = toExec.replace("{{"+item+"}}", content[item])
@@ -879,6 +900,8 @@ def main_loop(args):
                                     prev_p_in['kind'] = p_in['kind']
                                 if p_in['kc'] != P_UNKNOWN:
                                     l_print_t(PIPE_KC_IN,f"{p_in['kc']}")
+                                if get_flags:
+                                    l_print_t(PIPE_OPT_IN, f"{get_flags}")
                                 execWords = toExec.split()
                                 noheaderPresent = "--no-headers" in execWords
                                 pass_output_format(args)
@@ -896,14 +919,16 @@ def main_loop(args):
                     l_print_t(PIPE_CMD_IN, f"{command}")
                 if cmd['ctx'] != P_UNKNOWN:
                     l_print_t(PIPE_CTX_IN,f"{cmd['ctx']}")
-                # TODO cmd['ns'] not needed if get ns is used
                 if cmd['kind'] != P_UNKNOWN:
                     l_print_t(PIPE_KIND_IN,f"{cmd['kind']}")
                 if cmd['name'] != P_UNKNOWN:
                     l_print_t(PIPE_NAME_IN,f"{cmd['name']}")
+                if cmd['ns'] != P_UNKNOWN:
+                    l_print_t(PIPE_NS_IN,f"{cmd['ns']}")
                 if cmd['kc'] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{cmd['kc']}")
-                # TODO pass label selectors
+                if get_flags:
+                    l_print_t(PIPE_OPT_IN, f"{get_flags}")
                 pass_output_format(args)
                 execArgs = (
                         ["kubectl"]
@@ -988,7 +1013,6 @@ def main_loop(args):
                             # context can be generated with some other tool or formated file
                             if 'CONTEXT' in content:
                                 p_in['ctx'] = content['CONTEXT']
-                            ### TODO custom kind of input anything can be replaced no error is printed
                             if p_in['ctx'] == P_UNKNOWN:  # taking line as context name
                                 p_in['ctx'] = line[:-1]
                             toCheck = ""
