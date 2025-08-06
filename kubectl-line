@@ -67,11 +67,6 @@ P_EXEC = "exec"
 # _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get {{kind}} -A|_ get {{kind}} {{name}}
 # > /tmp/y"
 
-# TO FIX
-# _ --context minikube  -n test-run get pod | _ sh env | grep LINE_ - shows LINE__UNKNOWN_
-# TO FIX
-# _ kc-inject ~/.kube/config ~/.kube/config_copy | _ config get-contexts
-# while _ kc-inject ~/.kube/config ~/.kube/config_copy | _ cgc works
 
 import sys
 import os
@@ -191,6 +186,10 @@ def examples_help():
     print("---")
     print("Also exec is supported:")
     print("$ _ -n app get pod -l app=nginx | _ exec {{kind}} {{name}} -c nginx -- /bin/bash -c 'hostname'")
+    print("---")
+    print("This plugin should support (to some extent) existing plugins,")
+    print("for example o plugin for fixing output:")
+    print(" _ o xxl -n test-run get pod | _ sh echo {{NAME}} {{LABELS}}")
     print("---")
 
 
@@ -550,7 +549,7 @@ def extract_args(args, cmd, kctlOpts):
                     cmd["kc"] = args[i][eq_index + 1]
             i += 1
             continue
-        if args[i][1] == "-":
+        if len(args[i]) > 1 and args[i][1] == "-":
             if "=" in args[i]:
                 i += 1
             else:
@@ -676,6 +675,9 @@ def main_loop(args):
         l_print_t(P_ERROR, "empty command or not recognized command")
         return -1
 
+    if len(extracted) > 2 and extracted[1] == "config":
+        cmd["kind"] = extracted[2]
+
     command = extracted[1]
     if command in prohibited:
         l_print_t(P_ERROR, f"unhandled command {command}, prohibited")
@@ -698,7 +700,7 @@ def main_loop(args):
         p_in["obj"] = args[extracted_args_position[1] + 1]
     line_num = 0
     prevLine = ""
-    if (command == "config" and cmd["kind"] == "get-contexts") or command == "cgc":
+    if (command == "config" and cmd['kind'] == "get-contexts") or command == "cgc":
         if detect_input() == "fifo":
             for line in sys.stdin:
                 if prevLine:
@@ -968,16 +970,17 @@ def main_loop(args):
                                 "cmd" in p_in
                                 and p_in["cmd"] != P_UNKNOWN
                                 and "IN_CMD" not in content
-                            ):
+                                ):
                                 content["IN_CMD"] = p_in["cmd"]
-                            p_in["name"] = P_UNKNOWN
+                                p_in["name"] = P_UNKNOWN
                             if p_in["cmd"] != P_UNKNOWN:
                                 if "NAME" in content:
                                     if p_in["kind"] in ["ns", "namespace"]:
                                         content["NAMESPACE"] = content["NAME"]
                                         content["NS"] = content["NAME"]
                                     else:
-                                        content[p_in["get"].upper()] = content["NAME"]
+                                        if p_in["get"] != P_UNKNOWN:
+                                            content[p_in["get"].upper()] = content["NAME"]
                                     p_in["name"] = content["NAME"]
                                 if "KIND" not in content and p_in["kind"] != P_UNKNOWN:
                                     content["KIND"] = p_in[
@@ -1227,7 +1230,7 @@ def main_loop(args):
                                     "{{" + item + "}}", content[item]
                                 )
                             system_exec(toExec)
-                        break
+                        continue
         else:  # command get, no input pipe
             if detect_output() == "pipe":
                 if command in plugins:
