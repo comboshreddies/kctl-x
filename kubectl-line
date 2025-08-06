@@ -193,7 +193,6 @@ def examples_help():
     print("---")
 
 
-
 def instruction_help(instructions):
     print("---------------")
     info = {
@@ -218,6 +217,7 @@ def instruction_help(instructions):
     for i in instructions:
         print(f"{i} : " + info.get(i))
     print("---------------")
+
 
 def stream_helper():
     print("# Following execution streams are allowed:")
