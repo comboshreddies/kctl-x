@@ -69,6 +69,9 @@ P_EXEC = "exec"
 
 # TO FIX
 # _ --context minikube  -n test-run get pod | _ sh env | grep LINE_ - shows LINE__UNKNOWN_
+# TO FIX
+# _ kc-inject ~/.kube/config ~/.kube/config_copy | _ config get-contexts
+# while _ kc-inject ~/.kube/config ~/.kube/config_copy | _ cgc works
 
 import sys
 import os
@@ -174,6 +177,22 @@ def examples_help():
     print("$ _ api-r | _ get {{kind}} -A | _ sh env | grep " + PLUGIN_NAME + "_ ")
     print("this will show all env variables that start with plugin name on each sh execution")
     print("---")
+    print("Example of api-resources with explain:")
+    print("$ _ api-r | _ explain {{kind}}")
+    print("this will fetch explain for all resources available in cluster")
+    print("and you can for example drill down:")
+    print("$ _ api-r | _ explain {{kind}}.spec")
+    print("---")
+    print("Example of describe:")
+    print("$ _ -n test-run get pod | _ describe {{kind}} {{name}}")
+    print("---")
+    print("This pluggin will pass other plugins like (for plugin o):")
+    print("$ _ -n app get pod | _ o get {{kind}} {{name}}")
+    print("---")
+    print("Also exec is supported:")
+    print("$ _ -n app get pod -l app=nginx | _ exec {{kind}} {{name}} -c nginx -- /bin/bash -c 'hostname'")
+    print("---")
+
 
 
 def instruction_help(instructions):
@@ -617,7 +636,7 @@ def generate_to_exec(p_in, toCheck):
 def main_loop(args):
     global P_SHORTCUT
     all_cmds = fetch_kubectl_cmds()
-    kctl_allowed = ["api-resources", "get", "config", "exec", "top"]
+    kctl_allowed = ["api-resources", "get", "config", "exec", "top","describe","explain"]
     prohibited = []
     for item in all_cmds:
         if item not in kctl_allowed:
@@ -846,7 +865,7 @@ def main_loop(args):
                 else:
                     print(line, end="")
             line = newline
-    elif command in ["get", "sh", "exec", "top"] + plugins:  # in cmd command
+    elif command in ["get", "sh", "exec", "top","describe","explain"] + plugins:  # in cmd command
         if detect_input() == "fifo":
             for line in sys.stdin:
                 if prevLine:
