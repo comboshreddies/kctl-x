@@ -2059,15 +2059,16 @@ def main_loop(args):
     elif command in ["api-resources", "api-r"]:  # generator
         command_api_r(command, args, cmd, extracted_args_position)
     elif command in kctl_generators + ["sh"]: # generators
-        # check multiple get kinds, run them separately
-        # if command == "get" and "kind" in cmd and "," in cmd["kind"]:
-        #     prev_cmd_kind = cmd["kind"]
-        #     for item in prev_cmd_kind.split(","):
-        #         cmd["kind"] = item
-        #         if len(extracted_args_position) > 2:
-        #             args[extracted_args_position[2]] = item
-        #         command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
-        # else:
+        #check multiple get kinds, run them separately
+        # currently handled without splitting, consider removing this edge case handling
+        if command == "get" and "kind" in cmd and "," in cmd["kind"]:
+            prev_cmd_kind = cmd["kind"]
+            for item in prev_cmd_kind.split(","):
+                cmd["kind"] = item
+                if len(extracted_args_position) > 2:
+                    args[extracted_args_position[2]] = item
+                command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
+        else:
             command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
     elif command in kctl_consumers + plugins:
         command_others(command, args, cmd, extracted_args_position, get_flags, plugins)
