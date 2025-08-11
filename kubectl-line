@@ -30,6 +30,7 @@ P_CUSTOM_FMT = "custom-format"
 P_SHORTCUT = "_"
 P_EXEC = "exec"
 P_DEBUG_C = "content"
+P_DEBUG_IN = "pipe-in"
 
 # # # #
 # config get-contexts -> get
@@ -84,7 +85,8 @@ P_DEBUG_C = "content"
 P_DEBUG = os.getenv(f"{PLUGIN_UNAME}_DEBUG")
 P_CONTENT_DEBUG = os.getenv(f"{PLUGIN_UNAME}_CONTENT_DEBUG")
 P_SHORTCUT = os.getenv(f"{PLUGIN_UNAME}_SHORTCUT") or "_"
-P_IN_DEBUG = os.getenv(f"{PLUGIN_NAME}_IN_DEBUG")
+P_IN_DEBUG = os.getenv(f"{PLUGIN_UNAME}_IN_DEBUG")
+P_IGNORE_ERRORS = os.getenv(f"{PLUGIN_UNAME}_IGNORE_ERRORS")
 
 def examples_help():
     """provide examples"""
@@ -362,6 +364,12 @@ def content_to_environ(content):
         os.environ[f"{PLUGIN_UNAME}_{key}"] = value
 
 
+def p_in_to_environ(p_in):
+    for key, value in p_in.items():
+        if value != P_UNKNOWN:
+            os.environ[f"{PLUGIN_UNAME}_P_IN_{key}"] = value
+
+
 def replace_exec_line_with_content(exec_line, content):
     """replaces decored content in exec line to execute"""
     if P_CONTENT_DEBUG:
@@ -594,8 +602,11 @@ def system_exec(cmd):
         if(len(e.stdout)):
             print(f"{e.stdout}",flush=True,end="")
         if(len(e.stderr)):
-            print(f"{e.stderr}",flush=True, file=sys.stderr,end="")
+            print(f"#{PLUGIN_NAME}:{P_ERROR}:stderr:{e.stderr}",flush=True, file=sys.stderr,end="")
+        if not P_IGNORE_ERRORS:
             sys.exit(e.returncode)
+        else:
+            print(f"#{PLUGIN_NAME}:{P_ERROR}:stderr: exit code {e.returncode}, ignoring error",flush=True, file=sys.stderr)
         return
     lines = command_output.split("\n")
     for idx, value in enumerate(lines):
@@ -1200,10 +1211,14 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
             else:
                 to_check = " ".join(["kubectl"] + args[1:])
             to_exec = generate_to_exec(p_in, to_check)
+            # if more than one event like kctl api-resource apears,
+            # like EventSomething, this will not work, we need split by , and for each
             if "event" in p_in["kind"].lower() and "NAME" not in content and p_in["name"] == P_UNKNOWN:
+                # skip multiple get of events, as they are non selectable by name
                 if line_num > 2:
                     continue
                 else:
+                    # skip name if we are on first line for events
                     to_exec = to_exec.replace("{{name}}", "") # there is no name
             else:
                 to_exec = to_exec.replace("{{name}}", p_in["name"])
@@ -1397,19 +1412,27 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
     position = []
     columns = []
     content = {}
+    multiple_in = False
     line_num = -1
     p_in = set_pipe_input()
     if len(args) > extracted_args_position[1] + 1:  # kind
         p_in["obj"] = args[extracted_args_position[1] + 1]
     prev_p_in = set_pipe_input()
     for line in standard_input:  # sys.stdin:
+        if multiple_in and line == "\n": # case of get svc,pod there is a blank line break
+            line_num = 0 # reload headers
+            position = []
+            columns = {}
+            continue
         if line.startswith(f"#{PLUGIN_NAME}:"):
             p_in = detect_in_plugin_content(p_in, line)
             line_num = 0
             continue
         if line_num == 2 and P_IN_DEBUG:
-            l_print_e(P_DEBUG,p_in)
-        if p_in["cmd"] not in [
+            l_print_e(P_DEBUG_IN,p_in)
+        if ',' in p_in["kind"]:
+            multiple_in = True
+        if not multiple_in and p_in["cmd"] not in [
             "config_get-contexts",
             "get",
             "api-resources",
@@ -1523,21 +1546,34 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                     p_in["name"] = P_UNKNOWN
                 if p_in["cmd"] != P_UNKNOWN:
                     if "NAME" in content:
-                        if p_in["kind"] in ["ns", "namespace"]:
-                            content["NAMESPACE"] = content["NAME"]
-                            content["NS"] = content["NAME"]
-                        else:
-                            if p_in["get"] != P_UNKNOWN:
-                                content[p_in["get"].upper()] = content[
-                                    "NAME"
-                                ]
-                        p_in["name"] = content["NAME"]
+                            if p_in["kind"] in ["ns", "namespace"]:
+                                content["NAMESPACE"] = content["NAME"]
+                                content["NS"] = content["NAME"]
+                            else:
+                                if p_in["get"] != P_UNKNOWN:
+                                    content[p_in["get"].upper()] = content[
+                                        "NAME"
+                                    ]
+                            p_in["name"] = content["NAME"]
                     if "KIND" not in content and p_in["kind"] != P_UNKNOWN:
                         content["KIND"] = p_in[
                             "kind"
-                        ]
+                        ].split("/")[0]
                 if "KIND" in content:  # override value from pipe
                     p_in["kind"] = content["KIND"]
+                # TO CONSIDER other way of doing same would be sto split
+                # command to multiple single kind commands (get svc,pod)
+                # like separate command for svc, separate for pod
+                if multiple_in and "NAME" in content:
+                    if "/" in content["NAME"]:
+                        line_split = content["NAME"].split('/')
+                        if line_split[0] == "namespace":
+                            content["NAMESPACE"] = line_split[1]
+                        if line_split[0] == "node":
+                            del content["NAMESPACE"]
+                            content["NODE"] = line_split[1]
+                        content["NAME"] = line_split[1]
+                        content["KIND"] = line_split[0]
                 if "NAME" in content:
                     # fixing kubectl non standard output for storageClass
                     if (
@@ -1549,6 +1585,9 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                         p_in["name"] = content["NAME"]
                 if "NAMESPACE" in content:
                     p_in["ns"] = content["NAMESPACE"]
+                elif p_in["ns"] and p_in["ns"] != P_UNKNOWN:
+                    content["IN_NAMESPACE"] = p_in["ns"]
+                    content["IN_NS"] = p_in["ns"]
             elif (
                     p_in["format"] == "name"
             ):  # name does not support kind, nsed
@@ -1557,6 +1596,7 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
             if command == "sh":
                 to_check = " ".join(args[2:])
                 content_to_environ(content)
+                p_in_to_environ(p_in)
             elif args[0].split("/")[-1] == P_SHORTCUT:
                 to_check = " ".join(["kubectl", P_SHORTCUT] + args[1:])
             else:
@@ -1567,6 +1607,7 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                     continue
                 else:
                     to_exec = to_exec.replace("{{name}}", "") # there is no name
+                    l_print_e(P_WARNING, "ignoring multiple get on events, as there is no name")
             else:
                 to_exec = to_exec.replace("{{name}}", p_in["name"])
             to_exec = to_exec.replace("{{kind}}", p_in["kind"])
@@ -1938,7 +1979,7 @@ def extract_cmd(args, kctl_options):
         get_extracted, get_flags = extract_get_options(cmd["ctx"], args, kctl_options)
         if len(get_extracted) > 2:
             cmd["kind"] = get_extracted[2]
-        if len(get_extracted) > 3:
+        if len(get_extracted) > 3 and cmd["name"] == P_UNKNOWN:
             cmd["name"] = get_extracted[3]
 
     if len(extracted) > 2 and extracted[1] == "config":
@@ -2018,7 +2059,16 @@ def main_loop(args):
     elif command in ["api-resources", "api-r"]:  # generator
         command_api_r(command, args, cmd, extracted_args_position)
     elif command in kctl_generators + ["sh"]: # generators
-        command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
+        # check multiple get kinds, run them separately
+        # if command == "get" and "kind" in cmd and "," in cmd["kind"]:
+        #     prev_cmd_kind = cmd["kind"]
+        #     for item in prev_cmd_kind.split(","):
+        #         cmd["kind"] = item
+        #         if len(extracted_args_position) > 2:
+        #             args[extracted_args_position[2]] = item
+        #         command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
+        # else:
+            command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
     elif command in kctl_consumers + plugins:
         command_others(command, args, cmd, extracted_args_position, get_flags, plugins)
     else:  # no command recognized
