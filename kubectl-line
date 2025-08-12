@@ -263,8 +263,8 @@ def instruction_help(instructions,kctl_generators):
     """provide instructions"""
     print("---------------")
     info = {
-        "+": "select lines containing argument, + <argument>",
-        "-": "remove lines containing argument, - <argument>",
+        "+": "select lines containing argument word, + <argument>",
+        "-": "remove lines containing argument word, - <argument>",
         "api-r": "shortuct for api-resources",
         "cgc": "shortcut for config get-contexts kubectl command",
         "clean": "remove comment lines that are this plugin generates",
