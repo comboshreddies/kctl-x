@@ -88,6 +88,7 @@ P_SHORTCUT = os.getenv(f"{PLUGIN_UNAME}_SHORTCUT") or "_"
 P_IN_DEBUG = os.getenv(f"{PLUGIN_UNAME}_IN_DEBUG")
 P_IGNORE_ERRORS = os.getenv(f"{PLUGIN_UNAME}_IGNORE_ERRORS")
 
+
 def examples_help():
     """provide examples"""
     print(
@@ -249,22 +250,32 @@ def examples_help():
         "This plugin should support (to some extent) existing plugins,\n"
         "for example here is o plugin for adjusting kubectl output:\n"
         " _ o xxl -n test-run get pod | _ sh echo {{NAME}} {{LABELS}}\n"
-        "---\n")
+        "---\n"
+        "You can filter lines with + or filter out with - :\n"
+        "$ _ api-r | _ + KIND Namespace '^Pod$' \n"
+        "or for example:\n"
+        "$ _ get pods | _ - NAME nginx\n"
+        "---\n"
+        "In some cases, like api-resources, you can get duplicates\n"
+        "so you can use uniq command:\n"
+        "$ _ api-r | _ uniq KIND\n"
+    )
 
 
 def env_vars_helper():
+    """display help about available env vars"""
     print("set environment variables to any value:")
     print(f"env {PLUGIN_UNAME}_DEBUG - used to debug kubectl executions")
     print(f"env {PLUGIN_UNAME}_CONTENT_DEBUG - used to debug detected pipe content")
     print(f"env {PLUGIN_UNAME}_SHORTCUT - used to specify shortcut, _ by default")
 
 
-def instruction_help(instructions,kctl_generators):
+def instruction_help(instructions, kctl_generators):
     """provide instructions"""
     print("---------------")
     info = {
-        "+": "select lines containing argument word, + <argument>",
-        "-": "remove lines containing argument word, - <argument>",
+        "+": "select lines containing argument word, + <column_name> <argument> ...",
+        "-": "remove lines containing argument word, - <column_name> <argument> ...",
         "api-r": "shortuct for api-resources",
         "cgc": "shortcut for config get-contexts kubectl command",
         "clean": "remove comment lines that are this plugin generates",
@@ -272,7 +283,7 @@ def instruction_help(instructions,kctl_generators):
         "env-vars": "info about available environment variables",
         "examples": "showing examples of this tool",
         "-help": "this help",
-        "help" : "kubectl help",
+        "help": "kubectl help",
         "json-inject": "injects context tag into json file, "
         "if get/-o json is used",
         "kc-inject": "injects all contexts from all kubeconfig "
@@ -282,7 +293,6 @@ def instruction_help(instructions,kctl_generators):
         "top": "kubectl top command",
         "get": "kubectl get",
         "api-resources": "kubectl api-resources",
-        "config": "kubectl config get-contexts",
         "yaml-inject": "injects context into yaml file, "
         "if get/-o yaml is used",
         "uniq": "uniq as api-resources might return more same kind items"
@@ -299,6 +309,7 @@ def instruction_help(instructions,kctl_generators):
     for i in kctl_generators:
         print(f"   {i} : " + info.get(i))
     print("---------------")
+
 
 class StdinRecollector:
     """recollector of stdin, ensuring \n at the end"""
@@ -365,6 +376,7 @@ def content_to_environ(content):
 
 
 def p_in_to_environ(p_in):
+    """exports pipe in to environment variables"""
     for key, value in p_in.items():
         if value != P_UNKNOWN:
             os.environ[f"{PLUGIN_UNAME}_P_IN_{key}"] = value
@@ -402,8 +414,8 @@ def available_plugins():
     plugins = []
     command = ["kubectl", "plugin", "list"]
     try:
-        result = subprocess.run(command, capture_output=True, text=True)
-    except:
+        result = subprocess.run(command, check=False, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
         pass
     command_output = result.stdout
     lines = command_output.split("\n")
@@ -598,15 +610,15 @@ def system_exec(cmd):
         result = subprocess.run(exec_args, capture_output=True, text=True, check=True)
         command_output = result.stdout
     except subprocess.CalledProcessError as e:
-        print(f"#{PLUGIN_NAME}:{P_ERROR}: " + f"executing: {e.cmd[2:]}",flush=True, file=sys.stderr)
-        if(len(e.stdout)):
-            print(f"{e.stdout}",flush=True,end="")
-        if(len(e.stderr)):
-            print(f"#{PLUGIN_NAME}:{P_ERROR}:stderr:{e.stderr}",flush=True, file=sys.stderr,end="")
+        l_print_e(P_ERROR, f"executing: {e.cmd[2:]}")
+        if len(e.stdout):
+            print(f"{e.stdout}", flush=True, end="")
+        if len(e.stderr):
+            l_print_e(P_ERROR, f":stderr:{e.stderr}")
         if not P_IGNORE_ERRORS:
             sys.exit(e.returncode)
         else:
-            print(f"#{PLUGIN_NAME}:{P_ERROR}:stderr: exit code {e.returncode}, ignoring error",flush=True, file=sys.stderr)
+            l_print_e(P_ERROR, f":stderr: exit code {e.returncode}, ignoring error")
         return
     lines = command_output.split("\n")
     for idx, value in enumerate(lines):
@@ -657,13 +669,13 @@ def extract_get_options(context, args, kctl_opts):
             if args[i] in ["-n", "--namespace"] and len(args) > i + 1:
                 i += 2
                 continue
-            elif (
+            if (
                 args[i] == "-A"
             ):  # edge case -A does not take param, should be handled in some other way
                 flags += args[i]
                 i += 1
                 continue
-            elif len(args) > i + 1:
+            if len(args) > i + 1:
                 flags += f"{args[i]} {args[i + 1]}"
                 i += 2
                 continue
@@ -712,9 +724,8 @@ def extract_args(args, cmd, kctl_opts):
             if "=" in args[i]:
                 i += 1
                 continue
-            else:
-                i += 2
-                continue
+            i += 2
+            continue
         if args[i][0:2] == "{{" and args[i][-2:] == "}}":
             i += 1
             continue
@@ -870,44 +881,44 @@ def command_api_r_in_pipe(command, args, cmd):
             to_exec = replace_exec_line_with_content(to_exec, content)
             system_exec(to_exec)
             continue
-        else:  # command api resources,  no in cmd, best effort
-            if detect_input() == "fifo":
-                if prev_line:
-                    line = prev_line + line
-                if line[-1] != "\n":
-                    prev_line = line
-                    continue
-                if line_num == 0 and line.isupper():
-                    line_num += 1
-                    position, columns = read_header_line(line)
-                    continue
-                content = read_row_from_line(position, columns, line)
+    # command api resources,  no in cmd, best effort
+        if detect_input() == "fifo":
+            if prev_line:
+                line = prev_line + line
+            if line[-1] != "\n":
+                prev_line = line
+                continue
+            if line_num == 0 and line.isupper():
                 line_num += 1
-                if "NAME" in content:
-                    p_in["ctx"] = content["NAME"]
-                # if context is explicit column, we override context from name
-                # context can be generated with some other tool or formated file
-                if "CONTEXT" in content:
-                    p_in["ctx"] = content["CONTEXT"]
-                if p_in["ctx"] == P_UNKNOWN:  # taking line as context name
-                    p_in["ctx"] = line[:-1]
-                to_check = ""
-                if args[0].split("/")[-1] == P_SHORTCUT:
-                    to_check = " ".join(["kubectl", P_SHORTCUT] + args[1:])
-                else:
-                    to_check = " ".join(["kubectl"] + args[1:])
-                to_exec = generate_to_exec(p_in, to_check)
-                if detect_output() == "pipe":  # command api-r, no in cmd
-                    l_print_t(PIPE_CMD_IN, f"{command}")
-                    if p_in["ctx"] != P_UNKNOWN:
-                        l_print_t(PIPE_CTX_IN, f"{p_in['ctx']}")
-                    if p_in["kc"] != P_UNKNOWN:
-                        l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
-                    pass_output_format(args)
-                    l_print_t(PIPE_NOTE_IN, "appending --verbs=get,list")
-                    to_exec = to_exec + " --verbs=get,list"
-                to_exec = replace_exec_line_with_content(to_exec, content)
-                system_exec(to_exec)
+                position, columns = read_header_line(line)
+                continue
+            content = read_row_from_line(position, columns, line)
+            line_num += 1
+            if "NAME" in content:
+                p_in["ctx"] = content["NAME"]
+            # if context is explicit column, we override context from name
+            # context can be generated with some other tool or formated file
+            if "CONTEXT" in content:
+                p_in["ctx"] = content["CONTEXT"]
+            if p_in["ctx"] == P_UNKNOWN:  # taking line as context name
+                p_in["ctx"] = line[:-1]
+            to_check = ""
+            if args[0].split("/")[-1] == P_SHORTCUT:
+                to_check = " ".join(["kubectl", P_SHORTCUT] + args[1:])
+            else:
+                to_check = " ".join(["kubectl"] + args[1:])
+            to_exec = generate_to_exec(p_in, to_check)
+            if detect_output() == "pipe":  # command api-r, no in cmd
+                l_print_t(PIPE_CMD_IN, f"{command}")
+                if p_in["ctx"] != P_UNKNOWN:
+                    l_print_t(PIPE_CTX_IN, f"{p_in['ctx']}")
+                if p_in["kc"] != P_UNKNOWN:
+                    l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                pass_output_format(args)
+                l_print_t(PIPE_NOTE_IN, "appending --verbs=get,list")
+                to_exec = to_exec + " --verbs=get,list"
+            to_exec = replace_exec_line_with_content(to_exec, content)
+            system_exec(to_exec)
 
 
 def command_api_r(command, args, cmd, extracted_args_position):
@@ -1095,7 +1106,6 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
             )
             stream_helper()
             break
-
         if p_in["cmd"] in ["kc-inject", P_UNKNOWN]:  # command cgc, in kc-inject
             if p_in["format"] == P_DEFAULT:
                 if line_num == 0 and line.isupper():
@@ -1213,13 +1223,13 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
             to_exec = generate_to_exec(p_in, to_check)
             # if more than one event like kctl api-resource apears,
             # like EventSomething, this will not work, we need split by , and for each
-            if "event" in p_in["kind"].lower() and "NAME" not in content and p_in["name"] == P_UNKNOWN:
+            if ("event" in p_in["kind"].lower() and "NAME" not in content and
+                    p_in["name"] == P_UNKNOWN):
                 # skip multiple get of events, as they are non selectable by name
                 if line_num > 2:
                     continue
-                else:
-                    # skip name if we are on first line for events
-                    to_exec = to_exec.replace("{{name}}", "") # there is no name
+                # skip name if we are on first line for events
+                to_exec = to_exec.replace("{{name}}", "")  # there is no name
             else:
                 to_exec = to_exec.replace("{{name}}", p_in["name"])
             to_exec = to_exec.replace("{{kind}}", p_in["kind"])
@@ -1361,7 +1371,7 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
                     P_ERROR,
                     "not enough input: CONTEXT, NAMESPACE, KIND, NAME",
                 )
-                return -1
+                break
             if command == "sh":
                 to_check = " ".join(args[2:])
                 content_to_environ(content)
@@ -1407,6 +1417,7 @@ def command_others(command, args, cmd, extracted_args_position, get_flags, plugi
             exec_args = ["kubectl"] + args[1:]
         system_exec(" ".join(exec_args))
 
+
 def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_flags):
     """handling pipe in for get/extract/sh/describe ... and plugins"""
     position = []
@@ -1419,8 +1430,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
         p_in["obj"] = args[extracted_args_position[1] + 1]
     prev_p_in = set_pipe_input()
     for line in standard_input:  # sys.stdin:
-        if multiple_in and line == "\n": # case of get svc,pod there is a blank line break
-            line_num = 0 # reload headers
+        if multiple_in and line == "\n":  # case of get svc,pod there is a blank line break
+            line_num = 0  # reload headers
             position = []
             columns = {}
             continue
@@ -1429,7 +1440,7 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
             line_num = 0
             continue
         if line_num == 2 and P_IN_DEBUG:
-            l_print_e(P_DEBUG_IN,p_in)
+            l_print_e(P_DEBUG_IN, p_in)
         if ',' in p_in["kind"]:
             multiple_in = True
         if not multiple_in and p_in["cmd"] not in [
@@ -1546,15 +1557,15 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                     p_in["name"] = P_UNKNOWN
                 if p_in["cmd"] != P_UNKNOWN:
                     if "NAME" in content:
-                            if p_in["kind"] in ["ns", "namespace"]:
-                                content["NAMESPACE"] = content["NAME"]
-                                content["NS"] = content["NAME"]
-                            else:
-                                if p_in["get"] != P_UNKNOWN:
-                                    content[p_in["get"].upper()] = content[
-                                        "NAME"
-                                    ]
-                            p_in["name"] = content["NAME"]
+                        if p_in["kind"] in ["ns", "namespace"]:
+                            content["NAMESPACE"] = content["NAME"]
+                            content["NS"] = content["NAME"]
+                        else:
+                            if p_in["get"] != P_UNKNOWN:
+                                content[p_in["get"].upper()] = content[
+                                    "NAME"
+                                ]
+                        p_in["name"] = content["NAME"]
                     if "KIND" not in content and p_in["kind"] != P_UNKNOWN:
                         content["KIND"] = p_in[
                             "kind"
@@ -1602,12 +1613,12 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
             else:
                 to_check = " ".join(["kubectl"] + args[1:])
             to_exec = generate_to_exec(p_in, to_check)
-            if "event" in p_in["kind"].lower() and p_in["cmd"] == "get" and p_in["name"] == P_UNKNOWN:
+            if ("event" in p_in["kind"].lower() and p_in["cmd"] == "get" and
+                    p_in["name"] == P_UNKNOWN):
                 if line_num > 2:
                     continue
-                else:
-                    to_exec = to_exec.replace("{{name}}", "") # there is no name
-                    l_print_e(P_WARNING, "ignoring multiple get on events, as there is no name")
+                to_exec = to_exec.replace("{{name}}", "")  # there is no name
+                l_print_e(P_WARNING, "ignoring multiple get on events, as there is no name")
             else:
                 to_exec = to_exec.replace("{{name}}", p_in["name"])
             to_exec = to_exec.replace("{{kind}}", p_in["kind"])
@@ -1781,7 +1792,7 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                 P_ERROR,
                 "not enough input: CONTEXT, NAMESPACE, KIND, NAME",
             )
-            return -1
+            break
         if command == "sh":
             to_check = " ".join(args[2:])
             content_to_environ(content)
@@ -1851,11 +1862,10 @@ def command_kctl_generators(command, args, cmd, extracted_args_position, get_fla
             if get_flags:
                 l_print_t(PIPE_OPT_IN, f"{get_flags}")
             pass_output_format(args)
+            to_check = " ".join(["kubectl"] + args[1:])
             if command == "sh":
                 to_check = " ".join(args[2:])
             elif args[0].split("/")[-1] == P_SHORTCUT:
-            #    to_check = " ".join(["kubectl", P_SHORTCUT] + args[1:])
-            #else:
                 to_check = " ".join(["kubectl"] + args[1:])
             exec_args = to_check
             system_exec(exec_args)
@@ -1863,15 +1873,57 @@ def command_kctl_generators(command, args, cmd, extracted_args_position, get_fla
             if command == "sh":
                 to_check = " ".join(args[2:])
             elif args[0].split("/")[-1] == P_SHORTCUT:
-            #    to_check = " ".join(["kubectl", P_SHORTCUT] + args[1:])
-            #else:
                 to_check = " ".join(["kubectl"] + args[1:])
             exec_args = to_check
             system_exec(exec_args)
 
 
+def command_filter(args):
+    """command filter, filers line based on specific colum name"""
+    position = []
+    columns = []
+    content = {}
+    line_num = -1
+    if len(args) < 4:
+        l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp{len(args)}")
+        return
+    exclude = False
+    if args[1] == "-":
+        exclude = True
+    if args[1] == "+":
+        exclude = False
+    if args[1] not in ["-", "+"]:
+        l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp {args[1]}")
+        return
+    column_to_inspect = args[2]
+    p_in = set_pipe_input()
+    for line in standard_input:  # sys.stdin:
+        if line.startswith(f"#{PLUGIN_NAME}:"):
+            p_in = detect_in_plugin_content(p_in, line)
+            print(line, end="")
+            line_num = 0
+            continue
+        if line_num == 0 and line.isupper():
+            line_num += 1
+            position, columns = read_header_line(line)
+            print(line, end="")
+            continue
+        content = read_row_from_line(position, columns, line)
+        line_num += 1
+        if column_to_inspect in content:
+            match = False
+            for item in args[3:]:
+                if re.search(item, content[column_to_inspect]):
+                    match = True
+            if exclude and not match:
+                print(line, end="")
+            if not exclude and match:
+                print(line, end="")
+        else:
+            pass
 
-def command_filter(command, args):
+
+def command_filter_old(command, args):
     """filtering within pipeline"""
     if detect_input() == "fifo":
         for line in standard_input:  # sys.stdin:
@@ -1921,19 +1973,19 @@ def command_clean(cmd):
                 print(line, end="")
 
 
-def command_uniq(command, args, extracted_args_position, get_flags):
+def command_uniq(args, extracted_args_position):
+    """uniq input passed in named column"""
     position = []
     columns = []
     content = {}
     line_num = -1
     p_in = set_pipe_input()
     seen = []
-    colum_name = ""
     if len(extracted_args_position) > 2 and len(args) > extracted_args_position[2]:
-        column_name = (args[extracted_args_position[2]])
+        column_name = args[extracted_args_position[2]]
     else:
-        l_print_e(P_ERROR,"not enough arguments, specify column name")
-        return -1
+        l_print_e(P_ERROR, "not enough arguments, specify column name")
+        return
     for line in standard_input:  # sys.stdin:
         if line.startswith(f"#{PLUGIN_NAME}:"):
             p_in = detect_in_plugin_content(p_in, line)
@@ -1953,7 +2005,7 @@ def command_uniq(command, args, extracted_args_position, get_flags):
                 print(line, end="")
                 seen.append(content[column_name])
         elif line_num == 2:
-            l_print_e(P_ERROR,"no column {column_name} in current input")
+            l_print_e(P_ERROR, "no column {column_name} in current input")
 
 
 def exclude_list(all_cmds, kctl_allowed):
@@ -1991,8 +2043,8 @@ def extract_cmd(args, kctl_options):
 def main_loop(args):
     """main function"""
 
-    if len(args) <=1 :
-        l_print_e(P_ERROR, f"not enough parameters try running same command with argument -help")
+    if len(args) <= 1:
+        l_print_e(P_ERROR, "not enough parameters try running same command with argument -help")
         return -1
 
     all_kubectl_cmds = fetch_kubectl_cmds() + ['help']
@@ -2002,7 +2054,7 @@ def main_loop(args):
         "get",
         "top",
     ]
-    kctl_consumers = exclude_list(all_kubectl_cmds,kctl_generators)
+    kctl_consumers = exclude_list(all_kubectl_cmds, kctl_generators)
     plugins = available_plugins()
 
     internal = [
@@ -2013,8 +2065,8 @@ def main_loop(args):
         "env-vars",
         "yaml-inject",
         "json-inject",
-        "cgc", # command mapping
-        "api-r", # command mapping
+        "cgc",  # command mapping
+        "api-r",  # command mapping
         "kc-inject",
         "-help",
         "help",
@@ -2037,13 +2089,13 @@ def main_loop(args):
     elif command == "kc-inject":  # generator
         command_kc_inject(command, args, extracted_args_position)
     elif command in ["+", "-"]:  # filter
-        command_filter(command, args)
+        command_filter(args)
     elif command == "-help":  # help
-        instruction_help(internal,kctl_generators)
+        instruction_help(internal, kctl_generators)
         stream_helper()
     elif command == "help":
         command_unknown(command, args)
-        l_print_e(P_WARNING ,f"for {PLUGIN_NAME} help, use -help")
+        l_print_e(P_WARNING, f"for {PLUGIN_NAME} help, use -help")
     elif command == "env-vars":
         env_vars_helper()
     elif command == "examples":  # examples
@@ -2051,15 +2103,15 @@ def main_loop(args):
     elif command == "clean":  # filter
         command_clean(cmd)
     elif command == "uniq":
-        command_uniq(command, args, extracted_args_position, get_flags)
+        command_uniq(args, extracted_args_position)
     elif command == "yaml-inject":  # injector
         command_yaml_inject()
     elif command == "json-inject":  # injector
         command_json_inject()
     elif command in ["api-resources", "api-r"]:  # generator
         command_api_r(command, args, cmd, extracted_args_position)
-    elif command in kctl_generators + ["sh"]: # generators
-        #check multiple get kinds, run them separately
+    elif command in kctl_generators + ["sh"]:  # generators
+        # check multiple get kinds, run them separately
         # currently handled without splitting, consider removing this edge case handling
         if command == "get" and "kind" in cmd and "," in cmd["kind"]:
             prev_cmd_kind = cmd["kind"]
@@ -2067,7 +2119,8 @@ def main_loop(args):
                 cmd["kind"] = item
                 if len(extracted_args_position) > 2:
                     args[extracted_args_position[2]] = item
-                command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
+                command_kctl_generators(command, args, cmd, extracted_args_position,
+                                        get_flags, plugins)
         else:
             command_kctl_generators(command, args, cmd, extracted_args_position, get_flags, plugins)
     elif command in kctl_consumers + plugins:
@@ -2086,6 +2139,6 @@ if __name__ == "__main__":
     try:
         sys.exit(main_loop(sys.argv))
     except BrokenPipeError as e:
-        print(f"BrokenPipe:OutputOf: {" ".join(sys.argv)} , {e}",flush=True, file=sys.stderr)
+        print(f"BrokenPipe:OutputOf: {" ".join(sys.argv)} , {e}", flush=True, file=sys.stderr)
     finally:
         sys.stdout = None
