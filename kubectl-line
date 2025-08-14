@@ -87,7 +87,7 @@ P_CONTENT_DEBUG = os.getenv(f"{PLUGIN_UNAME}_CONTENT_DEBUG")
 P_SHORTCUT = os.getenv(f"{PLUGIN_UNAME}_SHORTCUT") or "_"
 P_IN_DEBUG = os.getenv(f"{PLUGIN_UNAME}_IN_DEBUG")
 P_IGNORE_ERRORS = os.getenv(f"{PLUGIN_UNAME}_IGNORE_ERRORS")
-P_USE_CACHE = os.getenv(f"{PLUGIN_UNAME}_CACHE") or False
+P_DISABLE_CACHE = os.getenv(f"{PLUGIN_UNAME}_DISABLE_CACHE") or False
 
 line_command_cache = {}
 
@@ -667,7 +667,7 @@ def system_exec(cmd):
     if P_DEBUG:
         l_print_e(P_EXEC, f"{cmd}")
     exec_args = ["/bin/bash", "-c", cmd]
-    if P_USE_CACHE and cmd in line_command_cache:
+    if not P_DISABLE_CACHE and cmd in line_command_cache:
             command_output = line_command_cache[cmd]
             if P_DEBUG:
                 l_print_e(P_DEBUG,f"cache hit on : {cmd}")
@@ -686,7 +686,7 @@ def system_exec(cmd):
                 l_print_e(P_ERROR, f":stderr: exit code {e.returncode}, ignoring error")
             return
         command_output = result.stdout
-        if P_USE_CACHE:
+        if not P_DISABLE_CACHE:
             if cmd not in line_command_cache:
                 line_command_cache[cmd] = command_output
     lines = command_output.split("\n")
