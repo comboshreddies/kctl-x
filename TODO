@@ -2,14 +2,13 @@
 # TODO improve help, add help command
 # TODO ensure passing more kubectl options arguments
 # from all global options currently only --kubeconfig, -n --namespace , --context are passed
-# TODO if those are passed and there are explicit --context -n we should respect explicit
+# TO VERIFY if those are passed and there are explicit --context -n we should respect explicit
 #
 # TO CONSIDER add command caching for fun (prevent running too much get ns)
 # TO CONSIDER -O for _ formatting (adding switches for extra formating)
 # TO CONSIDER additional clean arguments like clean columns
 # TO CONSIDER name from line to flow or cross or underscore or trans or kmux (kctl multiplexer)
 
-# TODO unify system_exec/subprocess.run, no need for separate subprocess.run
 TO FIX
 _  -n test-run get pod,svc | cat
 shows namespace
