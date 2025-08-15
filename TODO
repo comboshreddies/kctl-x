@@ -1,45 +1,22 @@
 
-# TODO improve help, add help command
 # TODO ensure passing more kubectl options arguments
 # from all global options currently only --kubeconfig, -n --namespace , --context are passed
 # TO VERIFY if those are passed and there are explicit --context -n we should respect explicit
 #
-# TO CONSIDER add command caching for fun (prevent running too much get ns)
 # TO CONSIDER -O for _ formatting (adding switches for extra formating)
-# TO CONSIDER additional clean arguments like clean columns
 # TO CONSIDER name from line to flow or cross or underscore or trans or kmux (kctl multiplexer)
 
-TO FIX
-_  -n test-run get pod,svc | cat
-shows namespace
-_  -n test-run get pod,svc | _ sh env 
-does not show in namespace
-^ now it shows IN_NAMESPACE but not namespace nor
-it replaces {{ns}} or {{namespace}}
-
-
-# HOMEWORK make code change for
-# ?f:ctx -> --context {{ctx}} but conditional , ? -> conditional, with flag
-# f:ctx -> --context {{ctx}} but not conditional
-# ?:ctx -> {{ctx}} conditional
-# ctx -> {{ctx}}
-# flags should be available for context, kubeconfig, namespace
-# name and kind should not have conditionals nor flags
-#
 # ?x:ctx  - conditional switch context-> --context ctx | ''
 # ?:ctx - conditional context-> ctx | ''
 # ctx - context -> ctx | {{ctx}}
 # ?x:ns - conditional switch namespace
 # ?:ns - conditional namespace
 # ns - namespace
-# ?kind -> kind | ''
 # kind -> kind
-# ?name -> name | ''
 # name -> name
 # ?x:kc -> conditional switch kubeconfig -> --kubeconfig config
 # ?:kc -> conditional kubeconfig -> config | ''
 # kc -> kubeconfig -> config
-
 
 # # # #
 # config get-contexts -> get
@@ -65,8 +42,61 @@ it replaces {{ns}} or {{namespace}}
 # - takes context as #pipe
 # - provides p_in['kind'] as column KIND:
 
+# interesting runs
 # getting object that od not have labels
 #  _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get {{kind}} -A --show-labels | _ + LABELS '<none>' | grep -v ^#line
+# TO TEST
+# time /bin/bash -c "
+# _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get ns|_ get {{kind}}|_ get {{kind}} {{name}}
+# > /tmp/x"
+# time /bin/bash -c "
+# _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get {{kind}} -A|_ get {{kind}} {{name}}
+# > /tmp/y"
+# _ -n test-run top pod --containers | _ exec {{POD}} -c {{NAME}} -- env
+#
 
-# TO FIX 
-# _ clean does not work on command above
+TO FIX
+_  -n test-run get pod,svc | cat
+shows namespace
+_  -n test-run get pod,svc | _ sh env 
+does not show in namespace
+^ now it shows IN_NAMESPACE but not namespace nor
+it replaces {{ns}} or {{namespace}}
+
+# TO CONSIDER
+# adding +? and -? for arithmetic cases like, or +# or -#
+_ -n test-run get pod | _ +# RESTARTS #1 gt 3
+#1 is first isolated full number (for example '2 (3d4h ago)' would map #1 -> 2, #2 -> 2, #3->4
+or for example in STATUS column #1 gt #2
+but it should be done with
+_ +# RESTARTS '#1 > #2'
+or just
+- ? RESTARTS
+
+maybe some formatter should be used for example
+53d -> should be mapped to 53 * (24*60*60) 
+or 3d4h -> should be mapped to 3 * (24*60*60) + 4*(60*60)
+for column AGE
+
+for column status -> just #1 #2 
+
+for MEMORY Ki Gi, Mi .. 
+for CPU
+CREATED AT <- consider xxxx_xxx (space _) as single header, fix header detection
+VALUE num
+CLUSTER-IP ip
+EXTERNAL-IP ip
+PORTS num
+ENDPOINTS ip
+
+
+if all numbers -> number
+if all chars -> char
+other cases if matches memory ki,gi,mi ... memory
+if matches cpu Xm , Xn-> cpu
+if matches  d h m s-> duration
+if matches x.y.x.w -> ip
+if matches YYYY-mm-ddTHH:MM:SSZ -> datetime
+
+
+
