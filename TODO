@@ -17,3 +17,38 @@ does not show in namespace
 ^ now it shows IN_NAMESPACE but not namespace nor
 it replaces {{ns}} or {{namespace}}
 
+
+# HOMEWORK make code change for
+# ?f:ctx -> --context {{ctx}} but conditional , ? -> conditional, with flag
+# f:ctx -> --context {{ctx}} but not conditional
+# ?:ctx -> {{ctx}} conditional
+# ctx -> {{ctx}}
+# flags should be available for context, kubeconfig, namespace
+# name and kind should not have conditionals nor flags
+
+
+# # # #
+# config get-contexts -> get
+# config get-context -> api-resources
+# api-resources -> get
+# get -> get
+# get -> exec
+# # # # # DOCS
+# all commands render command input options/switches for context cmd['ctx'],
+# namespace cmd['ns'] and get command can render cmd['kind'] and if present
+# cmd['name'] (object name if present)
+# not all commands use, so none of cmd_* are used in config_get-contexts
+# * api-resources uses cmd['ctx'] and cmd['ns'] if present in command line
+#   to pass those via #pipe
+# * get: uses cmd['ctx']/cmd['ns']/cmd['kind']/cmd['name'] if is first
+#   command in pipe sequence to pass those to next pipe,
+#   but NOTE get ns | get .. is special case !!
+#
+# config get-contexts :
+# - takes : nothing
+# - provides: context, as column NAME
+# api-resources:
+# - takes context as #pipe
+# - provides p_in['kind'] as column KIND:
+
+
