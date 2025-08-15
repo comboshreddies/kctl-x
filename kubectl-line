@@ -1910,6 +1910,7 @@ def command_filter(args):
     columns = []
     content = {}
     line_num = -1
+    header_line = ""
     if len(args) < 4:
         l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp{len(args)}")
         return
@@ -1926,13 +1927,14 @@ def command_filter(args):
     for line in standard_input:  # sys.stdin:
         if line.startswith(f"#{PLUGIN_NAME}:"):
             p_in = detect_in_plugin_content(p_in, line)
-            print(line, end="")
+            if detect_output() == "pipe":
+                print(line, end="")
             line_num = 0
             continue
         if line_num == 0 and line.isupper():
             line_num += 1
             position, columns = read_header_line(line)
-            print(line, end="")
+            header_line = line  # print no heders if there are no matches
             continue
         content = read_row_from_line(position, columns, line)
         line_num += 1
@@ -1942,34 +1944,17 @@ def command_filter(args):
                 if re.search(item, content[column_to_inspect]):
                     match = True
             if exclude and not match:
+                if header_line:
+                    print(header_line, end="")
+                    header_line = ""
                 print(line, end="")
             if not exclude and match:
+                if header_line:
+                    print(header_line, end="")
+                    header_line = ""
                 print(line, end="")
         else:
             pass
-
-
-def command_filter_old(command, args):
-    """filtering within pipeline"""
-    if detect_input() == "fifo":
-        for line in standard_input:  # sys.stdin:
-            if line[0: len(PLUGIN_NAME) + 2] == f"#{PLUGIN_NAME}:":
-                print(line, end="")
-            else:
-                if args[1] == "-":
-                    match = False
-                    for i in args[2:]:
-                        if re.search(i, line):
-                            match = True
-                    if not match:
-                        print(line, end="")
-                elif args[1] == "+":
-                    for i in args[2:]:
-                        if re.search(i, line):
-                            print(line, end="")
-                            break
-    else:
-        l_print_t(P_ERROR, f"no pipe input for {command}")
 
 
 def command_unknown(command, args):
@@ -1990,11 +1975,11 @@ def command_unknown(command, args):
 def command_clean(cmd):
     """clean specific headers or plugin specific lines"""
     if cmd["kind"] == "headers":
-        for line in sys.stdin.readline():
+        for line in standard_input:
             if not line.isupper() and not line.startswith(f"#{PLUGIN_NAME}:"):
                 print(line, end="")
     else:
-        for line in sys.stdin.readline():
+        for line in standard_input:
             if not line.startswith(f"#{PLUGIN_NAME}:"):
                 print(line, end="")
 

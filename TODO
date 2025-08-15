@@ -25,6 +25,20 @@ it replaces {{ns}} or {{namespace}}
 # ctx -> {{ctx}}
 # flags should be available for context, kubeconfig, namespace
 # name and kind should not have conditionals nor flags
+#
+# ?x:ctx  - conditional switch context-> --context ctx | ''
+# ?:ctx - conditional context-> ctx | ''
+# ctx - context -> ctx | {{ctx}}
+# ?x:ns - conditional switch namespace
+# ?:ns - conditional namespace
+# ns - namespace
+# ?kind -> kind | ''
+# kind -> kind
+# ?name -> name | ''
+# name -> name
+# ?x:kc -> conditional switch kubeconfig -> --kubeconfig config
+# ?:kc -> conditional kubeconfig -> config | ''
+# kc -> kubeconfig -> config
 
 
 # # # #
@@ -51,4 +65,8 @@ it replaces {{ns}} or {{namespace}}
 # - takes context as #pipe
 # - provides p_in['kind'] as column KIND:
 
+# getting object that od not have labels
+#  _ kc-inject ~/.kube/config|_ cgc|_ api-r|_ get {{kind}} -A --show-labels | _ + LABELS '<none>' | grep -v ^#line
 
+# TO FIX 
+# _ clean does not work on command above
