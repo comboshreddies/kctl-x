@@ -1999,6 +1999,71 @@ def command_unknown(command, args):
 
 def command_question(args):
     """handling test on column like AGE #1 > 5d """
+    # YYYY-mm-ddTHH:MM:SSZ
+    #match = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z", str)
+    # match = re.match(r"(\d+d)*(\d+h)*(\d+m)*(\d+s)*",tt1)
+    # 1m0.234s match = re.match(r"(\d+d)*(\d+h)*(\d+m)*((\d*.)*\d+s)*",tt2)
+    # match = re.match(r"(\d+)(Ki|Mi|Gi|Ti|Pi|Ei)","23Mi")
+    # READY r"(\d+)/\(\d+)"
+    # RESTARTS '2 (5d ago)'
+    #  re.match(r"(\d+)( \((\d+)(y|d|h|m|s){1} ago\))*",tt4)
+    # Endpoint 192.168.64.4 re.match(r"^(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[\
+    # 0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+    # pick-up r"^(\d+).(\d+).(\d+).(\d+)$"
+    #  v1.32.0  r"^v(\d+).(\d+).(\d+)
+    # ENDPOINTS -> 192.168.64.4:8443  ^ from above add :(\d+)
+    # PORTS 443/TCP
+    # ROLE -> ClusterRole/system:kube-controller-manager ?!?
+    #  re.match(r"([\w|\d|-]+)(([:|/]([\w|\d|-])+)([:|/]([\w|\d|-])+)*)*" ?!?
+    # PORTS 443/TCP   re.match(r"([\w|\d|-]+)(([/|:])([\w|\d|-]+))"
+    #  re.match(r"([\w|\d|-]+)(([/|:|\(|\)])([\w|\d|-]+))"
+    # XXeY r"(\d+)(e(\d+))*"
+    # steps
+    # 1 validate
+    # read/load
+    # convert to decimal or string representation, and load parts #0, #1, #2, #3 ...
+    # parse expression like [#\d| [gt|lt|ge|le|eq|ne|re] #\d
+    # re.match(r"(.*) ([eq|ne|lt|gt|le|ge|re]+) (.*)",tt8)
+    # pass to eval or calculate
+
+    """command filter, filers line based on specific colum name"""
+    position = []
+    columns = []
+    content = {}
+    line_num = -1
+    header_line = ""
+    if len(args) < 4:
+        l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp{len(args)}")
+        return
+    exclude = False
+    if args[1] == "-":
+        exclude = True
+    if args[1] == "+":
+        exclude = False
+    if args[1] not in ["-", "+"]:
+        l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp {args[1]}")
+        return
+    column_to_inspect = args[2]
+    p_in = set_pipe_input()
+    for line in standard_input:  # sys.stdin:
+        if line.startswith(f"#{PLUGIN_NAME}:"):
+            p_in = detect_in_plugin_content(p_in, line)
+            if detect_output() == "pipe":
+                print(line, end="")
+            line_num = 0
+            continue
+        if line_num == 0 and line.isupper():
+            line_num += 1
+            position, columns = read_header_line(line)
+            header_line = line  # print no heders if there are no matches
+            continue
+        content = read_row_from_line(position, columns, line)
+        line_num += 1
+        if column_to_inspect in content:
+        ####
+            pass
+        else:
+            pass
 
 
 def command_clean(cmd):

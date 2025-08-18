@@ -71,7 +71,7 @@ or for example in STATUS column #1 gt #2
 but it should be done with
 _ +# RESTARTS '#1 > #2'
 or just
-- ? RESTARTS
+- ? RESTARTS '#1 != 0'
 
 maybe some formatter should be used for example
 53d -> should be mapped to 53 * (24*60*60) 
@@ -98,5 +98,68 @@ if matches  d h m s-> duration
 if matches x.y.x.w -> ip
 if matches YYYY-mm-ddTHH:MM:SSZ -> datetime
 
-
-
+#####################################
+# eq, gt, lt, ge, le, and, = < > <= >= != , =~ regexp
+# 2025-06-23T17:14:05Z - YYYY-mm-ddTHH:MM:SSZ - string like comparison
+# 2025-06-23T17:14:05Z -> #0
+# XyXdXhXmXs  - decimal like comparison #0 (seconds) #1y
+# XdYh -> #0 seconds, $2 days, #2 hours
+# 1m0.323s - decimal like #0 seconds, #1m, $2s
+# 4m (cpu) - decimal  #0 milis
+# d.dddd cpu - decimal #0 milis, #1 whole, #2 decimal
+# 2Mi Ki, Mi, Gi  - #0 Decimal
+# XXX k | M | G | T | P | E - decimal
+# XXeY or XXXEY - decimal
+# NAME                             READY   STATUS    RESTARTS     AGE
+# busybox1-7f67945dfc-8vfrx        2/1     Running   2 (5d ago)   10d
+#  READY '#1 ne #2' -=-> 2 != 1 , #0 -> 2/1,
+#  RESTARTS  #1 -> 2 , #2 -> 5d  '#2 > 3d' -> true, #0 -> '2 (5d ago)'
+#  #0 2 , #1 2, #2 5d -> seconds
+# 2025-06-23T17:14:05Z ->
+# #1 -> 2025,  #2 -> 06, #3 -> 23 , #4 -> 17 , #5 -> 14, #6 -> 05
+#  ENDPOINTS -> 192.168.64.4 -> #0 number, #1,2,3,4 number, 
+# #1.#2.#3.#4 , #0 -> understood like ip
+# VERSION -> v1.32.0
+# ENDPOINTS -> 192.168.64.4:8443 -> #0 number #1,2,3,4,5 number
+# #5 -> 8443
+# ROLE -> ClusterRole/system:kube-controller-manager -> #0 string
+# #1 ClusterRole, #2 -> system, #3 -> kube-controller-manager
+# MEMORY -> 1866684Ki -> #0 number
+# PORTS 443/TCP >> 443 TCP #0 number
+# phase 1 reading column line (decoding pipe input), getting #0, #1, #2 ..
+# (stripping : / ( ) _ ...
+# phase 2 decoding command, recognizing static (like 3Gi), 
+#  and injecting #N arguments
+# evaluating expression            # eq, gt, lt, ge, le, and, = < > <= >= != , =~ regexp
+# 2025-06-23T17:14:05Z - YYYY-mm-ddTHH:MM:SSZ - string like comparison
+# 2025-06-23T17:14:05Z -> #0
+# XyXdXhXmXs  - decimal like comparison #0 (seconds) #1y
+# XdYh -> #0 seconds, $2 days, #2 hours
+# 1m0.323s - decimal like #0 seconds, #1m, $2s
+# 4m (cpu) - decimal  #0 milis
+# d.dddd cpu - decimal #0 milis, #1 whole, #2 decimal
+# 2Mi Ki, Mi, Gi  - #0 Decimal
+# XXX k | M | G | T | P | E - decimal
+# ki|Mi|Gi|Ti|Pi|Ei
+# XXeY or XXXEY - decimal
+# NAME                             READY   STATUS    RESTARTS     AGE
+# busybox1-7f67945dfc-8vfrx        2/1     Running   2 (5d ago)   10d
+#  READY '#1 ne #2' -=-> 2 != 1 , #0 -> 2/1,
+#  RESTARTS  #1 -> 2 , #2 -> 5d  '#2 > 3d' -> true, #0 -> '2 (5d ago)'
+#  #0 2 , #1 2, #2 5d -> seconds
+# 2025-06-23T17:14:05Z ->
+# #1 -> 2025,  #2 -> 06, #3 -> 23 , #4 -> 17 , #5 -> 14, #6 -> 05
+#  ENDPOINTS -> 192.168.64.4 -> #0 number, #1,2,3,4 number, 
+# #1.#2.#3.#4 , #0 -> understood like ip
+# VERSION -> v1.32.0
+# ENDPOINTS -> 192.168.64.4:8443 -> #0 number #1,2,3,4,5 number
+# #5 -> 8443
+# ROLE -> ClusterRole/system:kube-controller-manager -> #0 string
+# #1 ClusterRole, #2 -> system, #3 -> kube-controller-manager
+# MEMORY -> 1866684Ki -> #0 number
+# PORTS 443/TCP >> 443 TCP #0 number
+# phase 1 reading column line (decoding pipe input), getting #0, #1, #2 ..
+# (stripping : / ( ) _ ...
+# phase 2 decoding command, recognizing static (like 3Gi), 
+#  and injecting #N arguments
+# evaluating expression
