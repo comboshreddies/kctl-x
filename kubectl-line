@@ -2158,6 +2158,8 @@ def command_question(args):
                     value[3] = match.group(3)
                     q_type = "VERSION"
                     skip = True
+            # TODO 1234e66
+            # TODO K | M | G | T | P | E (ie Ki|Mi|Gi|Ti|Pi|Ei)
             if not skip:
                 l_print_e(P_ERROR,f"unknown format of a column {column_to_inspect}, assume string")
                 value[0] = to_check
