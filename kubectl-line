@@ -1998,52 +1998,22 @@ def command_unknown(command, args):
 
 
 def command_question(args):
-    """handling test on column like AGE #1 > 5d """
-    # YYYY-mm-ddTHH:MM:SSZ
-    #match = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z", str)
-    # match = re.match(r"(\d+d)*(\d+h)*(\d+m)*(\d+s)*",tt1)
-    # 1m0.234s match = re.match(r"(\d+d)*(\d+h)*(\d+m)*((\d*.)*\d+s)*",tt2)
-    # match = re.match(r"(\d+)(Ki|Mi|Gi|Ti|Pi|Ei)","23Mi")
-    # READY r"(\d+)/\(\d+)"
-    # RESTARTS '2 (5d ago)'
-    #  re.match(r"(\d+)( \((\d+)(y|d|h|m|s){1} ago\))*",tt4)
-    # Endpoint 192.168.64.4 re.match(r"^(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[\
-    # 0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-    # pick-up r"^(\d+).(\d+).(\d+).(\d+)$"
-    #  v1.32.0  r"^v(\d+).(\d+).(\d+)
-    # ENDPOINTS -> 192.168.64.4:8443  ^ from above add :(\d+)
-    # PORTS 443/TCP
-    # ROLE -> ClusterRole/system:kube-controller-manager ?!?
-    #  re.match(r"([\w|\d|-]+)(([:|/]([\w|\d|-])+)([:|/]([\w|\d|-])+)*)*" ?!?
-    # PORTS 443/TCP   re.match(r"([\w|\d|-]+)(([/|:])([\w|\d|-]+))"
-    #  re.match(r"([\w|\d|-]+)(([/|:|\(|\)])([\w|\d|-]+))"
-    # XXeY r"(\d+)(e(\d+))*"
-    # steps
-    # 1 validate
-    # read/load
-    # convert to decimal or string representation, and load parts #0, #1, #2, #3 ...
-    # parse expression like [#\d| [gt|lt|ge|le|eq|ne|re] #\d
-    # re.match(r"(.*) ([eq|ne|lt|gt|le|ge|re]+) (.*)",tt8)
-    # pass to eval or calculate
-
-    """command filter, filers line based on specific colum name"""
+    """handling test on column like AGE #1 > 5d"""
     position = []
     columns = []
     content = {}
     line_num = -1
     header_line = ""
     if len(args) < 4:
-        l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp{len(args)}")
+        l_print_e(P_WARNING, f"filter format is ? COLUMN_NAME #<n> operator #<n>|value {args}")
         return
-    exclude = False
-    if args[1] == "-":
-        exclude = True
-    if args[1] == "+":
-        exclude = False
-    if args[1] not in ["-", "+"]:
-        l_print_e(P_WARNING, f"filter format is [+|-] COLUMN_NAME regexp {args[1]}")
+    if args[1] != '?':
+        l_print_e(P_WARNING, f"filter format is ? COLUMN_NAME #<n> operator #<n>|value {len(args)}")
         return
     column_to_inspect = args[2]
+    q_operator = args[4]
+    q_operand1 = args[3]
+    q_operand2 = args[5]
     p_in = set_pipe_input()
     for line in standard_input:  # sys.stdin:
         if line.startswith(f"#{PLUGIN_NAME}:"):
@@ -2057,13 +2027,183 @@ def command_question(args):
             position, columns = read_header_line(line)
             header_line = line  # print no heders if there are no matches
             continue
+        value = {}
         content = read_row_from_line(position, columns, line)
         line_num += 1
+        skip = False
         if column_to_inspect in content:
-        ####
-            pass
-        else:
-            pass
+            to_check = content[column_to_inspect]
+            q_type = P_UNKNOWN
+            # age like format
+            match = re.match(r"(\d+d)*(\d+h)*(\d+m)*(\d+s)*", to_check)
+            if match and match.group(0):
+                days = int(match.group(1)[:-1])
+                hours = int(match.group(2)[:-1])
+                minutes = int(match.group(3)[:-1])
+                seconds = int(match.group(4)[:-1])
+                value['int'] = days * 86400 + hours * 3600 + minutes * 60 + seconds
+                q_type = 'AGE'
+                skip = True
+            if not skip:
+                # ready like format
+                match = re.match(r"(\d+)/(\d+)", to_check)
+                if match:
+                    value[0] = match.group(0)
+                    value[1] = match.group(1)
+                    value[2] = match.group(2)
+                    q_type = 'READY'
+                    skip = True
+            if not skip:
+                match = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z", to_check)
+                if match:
+                    value[0] = match.group(0)
+                    value[1] = match.group(1)
+                    value[2] = match.group(2)
+                    value[3] = match.group(3)
+                    value[4] = match.group(4)
+                    value[5] = match.group(5)
+                    value[6] = match.group(6)
+                    q_type = 'DATE'
+                    skip = True
+            if not skip :
+                # NodeMetrics WINDOW
+                match = re.match(r"(\d+d)*(\d+h)*(\d+m)*((\d*.)*\d+s)*", to_check)
+                if match and match.group(0):
+                    days = int(match.group(1)[:-1])
+                    hours = int(match.group(2)[:-1])
+                    minutes = int(match.group(3)[:-1])
+                    seconds = float(match.group(4)[:-1])
+                    value['int'] = days * 86400 + hours * 3600 + minutes * 60 + seconds
+                    q_type = 'NMETRICS'
+                    skip = True
+            if not skip:
+                # restarts like format '2 (5d ago)'
+                match = re.match(r"^(\d+)( \((\d+)[y|d|h|m|s]{1} ago\))*$",to_check)
+                if match and match.group(0):
+                    value[0] = match.group(0) # restarts
+                    value['str'] = match.group(0) # full string
+                    value['int'] = int(value[0])
+                    value[1] = int(match.group(1))
+                    val3 = match.group(3)
+                    if val3[-1] == 'y':
+                        value[2] = 31536000 * int(val3[:-1])
+                    if val3[-1] == 'd':
+                        value[2] = 86400 * int(val3[:-1])
+                    if val3[-1] == 'h':
+                        value[2] = 3600 * int(val3[:-1])
+                    if val3[-1] == 'm':
+                        value[2] = 60 * int(val3[:-1])
+                    if val3[-1] == 's':
+                        value[2] = int(val3[:-1])
+                    q_type = 'RESTARTS'
+                    skip = True
+            if not skip:
+                # ip address
+                match = re.match(
+                    r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+                    to_check)
+                if match and match.group(0):
+                    match = re.match(r"^(\d+).(\d+).(\d+).(\d+)$", to_check)
+                    if match:
+                        value[0] = match.group(0)
+                        value[1] = match.group(1)
+                        value[2] = match.group(2)
+                        value[3] = match.group(3)
+                        value[4] = match.group(4)
+                        value['int'] = (((int(value['1'])*256+ int(value['2']))*256 + int(value['3'])*256 + int(value['4'])))
+                        q_type = 'IP'
+                        skip = True
+            if not skip:
+                # ip address : port
+                match = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?)$", to_check)
+                if match and match.group(0):
+                    match = re.match(r"^(\d+).(\d+).(\d+).(\d+):(\d+)$", to_check)
+                    if match and match.group(0):
+                        value[0] = match.group(0)
+                        value[1] = match.group(1)
+                        value[2] = match.group(2)
+                        value[3] = match.group(3)
+                        value[4] = match.group(4)
+                        value[5] = match.group(5)
+                        q_type = "TCPIP"
+                        skip = True
+            if not skip:
+                # role
+                match = re.match(r"([\w|\d|-]+)[:|/]*([\w|\d|-]*)[:|/]*([\w|\d|-]*)", to_check)
+                if match and match.group(0):
+                    value[0] = match.group(0)
+                    value[1] = match.group(1)
+                    value[2] = match.group(2)
+                    value[3] = match.group(3)
+                    value['str'] = match.group(0)
+                    q_type = "ROLE"
+                    skip = True
+            if not skip:
+                # PORTS 443/TCP
+                match = re.match( r"(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?):(\w+)$", to_check)
+                if match and match.group(0):
+                    match = re.match( r"(\d+)/(\w+)", to_check)
+                    value[0] = match.group(0)
+                    value[1] = match.group(1)
+                    value[2] = match.group(2)
+                    q_type = "PORTS"
+                    skip = True
+            if not skip:
+                #  v1.32.0  r"^v(\d+).(\d+).(\d+)
+                match = re.match(r"^v(\d+).(\d+).(\d+)$", to_check)
+                if match and match.group(0):
+                    value[0] = match.group(0)
+                    value[1] = match.group(1)
+                    value[2] = match.group(2)
+                    value[3] = match.group(3)
+                    q_type = "VERSION"
+                    skip = True
+            if not skip:
+                l_print_e(P_ERROR,f"unknown format of a column {column_to_inspect}, assume string")
+                value[0] = to_check
+                q_type = "STRING"
+            if q_operator not in ['eq','ne','le','ge','gt','lt','%','re']:
+                l_print_e(P_ERROR, f"unknown operator {column_to_inspect}")
+            else:
+                if q_operand1[0] != '?' and q_operand2[0] != '?':
+                    l_print_e(P_ERROR, f"at least one operand should be internal ie start with ?")
+                    break
+                elif q_operand1[0] == '?' and q_operand2[0] == '?':
+                    # internal comparison
+                    q_check = False
+                    # try no guarantee that operand can be converted to int
+                    qo1_idx = int(q_operand1[1:])
+                    qo2_idx = int(q_operand2[1:])
+                    if P_DEBUG:
+                        print(value)
+                        print(q_type)
+                    if qo1_idx in value and qo2_idx in value:
+                        if q_operator == 'eq' and value[qo1_idx] == value[qo2_idx]:
+                                q_check = True
+                        if q_operator == 'ne' and value[qo1_idx] != value[qo2_idx]:
+                                q_check = True
+                        if q_operator == 'le' and value[qo1_idx] <= value[qo2_idx]:
+                                q_check = True
+                        if q_operator == 'lt' and value[qo1_idx] < value[qo2_idx]:
+                                q_check = True
+                        if q_operator == 'gt' and value[qo1_idx] > value[qo2_idx]:
+                                q_check = True
+                        if q_operator == 'le' and value[qo1_idx] <= value[qo2_idx]:
+                                q_check = True
+                        if q_operator == 're' and value[qo1_idx] <= value[qo2_idx]:
+                            # TODO implement re or reject re for both ? operands
+                            q_check = False
+                        if q_operator == '%' and value[qo1_idx] <= value[qo2_idx]:
+                                print(f"left operand: {value[qo1_idx]}, index {qo1_idx}, right operand: {value[qo2_idx]} index {qo2_idx}, decoded value: {value}")
+                        if q_check:
+                            if header_line:
+                                print(header_line, end="")
+                                header_line = ""
+                            print(line, end="")
+                    else:
+                        l_print_e(P_ERROR, f"no value offset {qo1_idx} or {qo2_idx} in value f{value}")
+                else:
+                    l_print_e(P_ERROR, f"unknown operator {q_operator}")
 
 
 def command_clean(cmd):
