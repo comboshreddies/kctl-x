@@ -2246,7 +2246,7 @@ def command_question(args):
                 l_print_e("debug?",f"matched fields: {value}")
                 l_print_e("debug?",f"type: {q_type}")
                 continue
-            # TODO 1234e66
+            # TODO 1234e66, but haven't seen one
             if not skip:
                 l_print_e(P_ERROR,f"unknown format of a column {column_to_inspect}, assume string")
                 value[0] = to_check
@@ -2263,9 +2263,6 @@ def command_question(args):
                     # try no guarantee that operand can be converted to int
                     qo1_idx = int(q_operand1[1:])
                     qo2_idx = int(q_operand2[1:])
-                    if P_DEBUG:
-                        l_print_e(P_DEBUG,value)
-                        l_print_e(P_DEBUG,q_type)
                     if qo1_idx in value and qo2_idx in value:
                         if q_operator == 'eq' and value[qo1_idx] == value[qo2_idx]:
                                 q_check = True
