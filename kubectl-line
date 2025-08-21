@@ -1997,14 +1997,44 @@ def command_unknown(command, args):
         system_exec(" ".join(exec_args))
 
 
+def q_evaluate(op1, op2, operator):
+    q_check = False
+    if type(op1) != type(op2):
+        l_print_e(P_WARNING, f"> input types are not same")
+        return False
+    if operator == 'eq' and op1 == op2:
+        q_check = True
+    if operator == 'ne' and op1 != op2:
+        q_check = True
+    if operator == 'le' and op1 <= op2:
+        q_check = True
+    if operator == 'lt' and op1 < op2:
+        q_check = True
+    if operator == 'gt' and op1 > op2:
+        q_check = True
+    if operator == 'ge' and op1 >= op2:
+        q_check = True
+    if operator == 're':
+        if type(op1) != str:
+            op1 = str(op1)
+        if type(op2) != str:
+            op2 = str(op2)
+        match = re.search(op2, op1)
+        if match and match.group(0):
+            q_check = True
+    if operator == '?':
+        l_print_e("debug?",
+                  f"left operand: {op1}, right operand: {op2}")
+    return q_check
+
+
 def command_question(args):
     """handling test on column like AGE #1 > 5d"""
     position = []
     columns = []
-    content = {}
-    line_num = -1
+    line_num = 0
     header_line = ""
-    if not ( (len(args) == 4 and args[3] == "_DEBUG_") or (len(args) == 3 and args[2] == "_DEBUG_") ):
+    if not ( (len(args) == 4 and args[3] == "??") or (len(args) == 3 and args[2] == "??") ):
         if len(args) < 4 :
             l_print_e(P_WARNING, f"filter format is ? COLUMN_NAME #<n> operator #<n>|value {args}")
             return
@@ -2027,52 +2057,89 @@ def command_question(args):
                 print(line, end="")
             line_num = 0
             continue
-        if line_num == 0 and line.isupper():
-            line_num += 1
-            position, columns = read_header_line(line)
-            header_line = line  # print no heders if there are no matches
-            continue
-        if line_num == 0 and p_in["cmd"] == "top":
+        if line_num == 0 :
             line_num += 1
             modified_line = line.upper()
             modified_line = modified_line.replace("(", "_")
             modified_line = modified_line.replace(")", " ")
             modified_line = modified_line.replace("%", "P")
-            position, columns = read_header_line(modified_line)
-            continue
+            if modified_line.isupper():
+                position, columns = read_header_line(modified_line)
+                header_line = line
+                continue
+            else:
+                l_print_e(P_DEBUG,f"unrecognized headers")
+                break
         value = {}
         content = read_row_from_line(position, columns, line)
         line_num += 1
         skip = False
         parse_debug = False
-        if (len(args) == 4 and args[3] == "_DEBUG_") or (len(args) == 3 and args[2] == "_DEBUG_"):
+        if (len(args) == 4 and args[3] == "??") or (len(args) == 3 and args[2] == "??"):
             l_print_e("debug?",f"line content: {content}")
             parse_debug = True
         if column_to_inspect in content:
             to_check = content[column_to_inspect]
             q_type = P_UNKNOWN
             # age like format
-            match = re.match(r"(\d+d)*(\d+h)*(\d+m)*(\d+s)*", to_check)
-            if match and match.group(0) and "CPU" not in column_to_inspect :
-                days = 0
-                hours = 0
-                minutes = 0
-                seconds = 0
-                if match.group(1):
-                    days = int(match.group(1)[:-1])
-                    value['d'] = days
-                if match.group(2):
-                    hours = int(match.group(2)[:-1])
-                    value['H'] = hours
-                if match.group(3):
-                    minutes = int(match.group(3)[:-1])
-                    value['M'] = minutes
-                if match.group(4):
-                    seconds = int(match.group(4)[:-1])
-                    value['S'] = seconds
-                value['int'] = days * 86400 + hours * 3600 + minutes * 60 + seconds
-                q_type = 'AGE'
+            match = re.match( r"^(\d+)$", to_check)
+            if match and match.group(0):
+                value[0] = match.group(0)
+                value[1] = int(match.group(1))
+                q_type = "NUMBER"
                 skip = True
+            if not skip:
+                match = re.match( r"^([a-zA-Z]+)$", to_check)
+                if match and match.group(0):
+                    value[0] = match.group(0)
+                    q_type = "WORD"
+                    skip = True
+            if not skip:
+                match = re.match( r"^(\d+)(\.)*(\d*)$", to_check)
+                if match and match.group(0):
+                    value[0] = match.group(0)
+                    value[1] = float(match.group(0))
+                    q_type = "FLOAT"
+                    skip = True
+            if not skip:
+                match = re.match(r"^([a-z][a-z0-9-.]*)$", to_check)
+                if match and match.group(0):
+                    value[0] = match.group(0)
+                    q_type = "RESOURCE"
+                    skip = True
+            if not skip:
+                # role,and more complex types
+                match = re.match(r"([a-z][a-z0-9-.]+)[:|/]*([a-z0-9-.]+)[:|/]*([a-z0-9-.]*)", to_check)
+                if match and match.group(0) and "CPU" not in column_to_inspect and "MEMORY" not in column_to_inspect:
+                    value[0] = match.group(0)
+                    value[1] = match.group(1)
+                    value[2] = match.group(2)
+                    value[3] = match.group(3)
+                    value['str'] = match.group(0)
+                    q_type = "URI"
+                    skip = True
+            if not skip:
+                match = re.match(r"(\d+d)*(\d+h)*(\d+m)*(\d+s)*", to_check)
+                if match and match.group(0) and "CPU" not in column_to_inspect :
+                    days = 0
+                    hours = 0
+                    minutes = 0
+                    seconds = 0
+                    if match.group(1):
+                        days = int(match.group(1)[:-1])
+                        value['d'] = days
+                    if match.group(2):
+                        hours = int(match.group(2)[:-1])
+                        value['h'] = hours
+                    if match.group(3):
+                        minutes = int(match.group(3)[:-1])
+                        value['m'] = minutes
+                    if match.group(4):
+                        seconds = int(match.group(4)[:-1])
+                        value['s'] = seconds
+                    value['int'] = days * 86400 + hours * 3600 + minutes * 60 + seconds
+                    q_type = 'AGE'
+                    skip = True
             if not skip:
                 # ready like format
                 match = re.match(r"(\d+)/(\d+)", to_check)
@@ -2117,24 +2184,25 @@ def command_question(args):
                 if match and match.group(0):
                     value[0] = match.group(0) # restarts
                     value['str'] = match.group(0) # full string
-                    value['int'] = int(value[0])
+                    value['int'] = int(match.group(1))
                     value[1] = int(match.group(1))
                     val3 = match.group(3)
-                    if val3[-1] == 'y':
-                        value[2] = 31536000 * int(val3[:-1])
-                        value['y'] = int(val3[:-1])
-                    if val3[-1] == 'd':
-                        value[2] = 86400 * int(val3[:-1])
-                        value['d'] = int(val3[:-1])
-                    if val3[-1] == 'h':
-                        value[2] = 3600 * int(val3[:-1])
-                        value['h'] = int(val3[:-1])
-                    if val3[-1] == 'm':
-                        value[2] = 60 * int(val3[:-1])
-                        value['m'] = int(val3[:-1])
-                    if val3[-1] == 's':
-                        value[2] = int(val3[:-1])
-                        value['s'] = int(val3[:-1])
+                    if val3 and len(val3) > 1:
+                        if val3[-1] == 'y':
+                            value[2] = 31536000 * int(val3[:-1])
+                            value['y'] = int(val3[:-1])
+                        if val3[-1] == 'd':
+                            value[2] = 86400 * int(val3[:-1])
+                            value['d'] = int(val3[:-1])
+                        if val3[-1] == 'h':
+                            value[2] = 3600 * int(val3[:-1])
+                            value['h'] = int(val3[:-1])
+                        if val3[-1] == 'm':
+                            value[2] = 60 * int(val3[:-1])
+                            value['m'] = int(val3[:-1])
+                        if val3[-1] == 's':
+                            value[2] = int(val3[:-1])
+                            value['s'] = int(val3[:-1])
                     q_type = 'RESTARTS'
                     skip = True
             if not skip:
@@ -2167,17 +2235,6 @@ def command_question(args):
                         value[5] = match.group(5)
                         q_type = "TCPIP"
                         skip = True
-            if not skip:
-                # role
-                match = re.match(r"([\w|\d|-]+)[:|/]*([\w|\d|-]*)[:|/]*([\w|\d|-]*)", to_check)
-                if match and match.group(0) and "CPU" not in column_to_inspect and "MEMORY" not in column_to_inspect:
-                    value[0] = match.group(0)
-                    value[1] = match.group(1)
-                    value[2] = match.group(2)
-                    value[3] = match.group(3)
-                    value['str'] = match.group(0)
-                    q_type = "ROLE"
-                    skip = True
             if not skip:
                 # PORTS 443/TCP
                 match = re.match( r"(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?):(\w+)$", to_check)
@@ -2241,18 +2298,18 @@ def command_question(args):
                     else:
                         value['int'] = value['int'] * 1000
                     q_type = "CPU"
-            if parse_debug:
-                l_print_e("debug?",column_to_inspect)
-                l_print_e("debug?",f"matched fields: {value}")
-                l_print_e("debug?",f"type: {q_type}")
-                continue
             # TODO 1234e66, but haven't seen one
             if not skip:
                 l_print_e(P_ERROR,f"unknown format of a column {column_to_inspect}, assume string")
                 value[0] = to_check
                 q_type = "STRING"
-            if q_operator not in ['eq','ne','le','ge','gt','lt','%','re']:
-                l_print_e(P_ERROR, f"unknown operator {column_to_inspect}")
+            if parse_debug:
+                l_print_e("debug?",column_to_inspect)
+                l_print_e("debug?",f"matched fields: {value}")
+                l_print_e("debug?",f"type: {q_type}")
+                continue
+            if q_operator not in ['eq','ne','le','ge','gt','lt','?','re']:
+                l_print_e(P_ERROR, f"unknown operator {q_operator}")
             else:
                 if q_operand1[0] != '?' and q_operand2[0] != '?':
                     l_print_e(P_ERROR, f"at least one operand should be internal ie start with ?")
@@ -2264,32 +2321,48 @@ def command_question(args):
                     qo1_idx = int(q_operand1[1:])
                     qo2_idx = int(q_operand2[1:])
                     if qo1_idx in value and qo2_idx in value:
-                        if q_operator == 'eq' and value[qo1_idx] == value[qo2_idx]:
-                                q_check = True
-                        if q_operator == 'ne' and value[qo1_idx] != value[qo2_idx]:
-                                q_check = True
-                        if q_operator == 'le' and value[qo1_idx] <= value[qo2_idx]:
-                                q_check = True
-                        if q_operator == 'lt' and value[qo1_idx] < value[qo2_idx]:
-                                q_check = True
-                        if q_operator == 'gt' and value[qo1_idx] > value[qo2_idx]:
-                                q_check = True
-                        if q_operator == 'le' and value[qo1_idx] <= value[qo2_idx]:
-                                q_check = True
-                        if q_operator == 're' and value[qo1_idx] <= value[qo2_idx]:
-                            # TODO implement re or reject re for both ? operands
-                            q_check = False
-                        if q_operator == '%' and value[qo1_idx] <= value[qo2_idx]:
-                                print(f"left operand: {value[qo1_idx]}, index {qo1_idx}, right operand: {value[qo2_idx]} index {qo2_idx}, decoded value: {value}")
-                        if q_check:
+                        if q_evaluate(value[qo1_idx],value[qo2_idx],q_operator):
                             if header_line:
                                 print(header_line, end="")
                                 header_line = ""
                             print(line, end="")
                     else:
                         l_print_e(P_ERROR, f"no value offset {qo1_idx} or {qo2_idx} in value f{value}")
+                elif q_operand1[0] == '?' or q_operand2[0] == '?':
+                    if q_operand1[0] == '?':
+                        internal_operand = q_operand1[1:]
+                        external_operand = q_operand2
+                    else:
+                        internal_operand = q_operand2[1:]
+                        external_operand = q_operand1
+                    if  internal_operand in value:
+                        qo_int = value[internal_operand]
+                    elif re.match(r"^(\d+)$",internal_operand) and int(internal_operand) in value:
+                        qo_int = value[int(internal_operand)]
+                    else:
+                        l_print_e("error?",f"operand {internal_operand} not found in values {value}")
+                        continue
+                    test_result = False
+                    if type(qo_int) == int:
+                        # check if external is int
+                        match = re.match(r"^(\d+)$",external_operand)
+                        if match:
+                            test_result = q_evaluate(qo_int,int(external_operand),q_operator)
+                    elif type(qo_int) == float:
+                        # check if external is float
+                        match = re.match(r"^(\d+).(\d)*$", external_operand)
+                        if match:
+                            test_result = q_evaluate(qo_int, float(external_operand), q_operator)
+                    else:
+                        # string
+                        test_result = q_evaluate(qo_int, external_operand, q_operator)
+                    if test_result:
+                        if header_line:
+                            print(header_line, end="")
+                            header_line = ""
+                        print(line, end="")
                 else:
-                    l_print_e(P_ERROR, f"unknown operator {q_operator}")
+                    l_print_e(P_ERROR, f"unknown operands {q_operator}")
 
 
 def command_clean(cmd):
