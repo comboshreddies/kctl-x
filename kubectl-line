@@ -2078,6 +2078,11 @@ def command_question(args):
         if (len(args) == 4 and args[3] == "??") or (len(args) == 3 and args[2] == "??"):
             l_print_e("debug?",f"line content: {content}")
             parse_debug = True
+        if column_to_inspect not in columns:
+            for i in columns:
+                if re.match(f".*{column_to_inspect}.*",i):
+                    column_to_inspect = i
+                    break
         if column_to_inspect in content:
             to_check = content[column_to_inspect]
             q_type = P_UNKNOWN
@@ -2309,7 +2314,7 @@ def command_question(args):
                 l_print_e("debug?",f"type: {q_type}")
                 continue
             if q_operator not in ['eq','ne','le','ge','gt','lt','?','re']:
-                l_print_e(P_ERROR, f"unknown operator {q_operator}")
+                l_print_e(P_ERROR, f"unknown operator {q_operator} or not enough args")
             else:
                 if q_operand1[0] != '?' and q_operand2[0] != '?':
                     l_print_e(P_ERROR, f"at least one operand should be internal ie start with ?")
@@ -2363,6 +2368,9 @@ def command_question(args):
                         print(line, end="")
                 else:
                     l_print_e(P_ERROR, f"unknown operands {q_operator}")
+        else:
+            l_print_e(P_WARNING, f"no column {column_to_inspect} in present columns")
+            print(line, end="")
 
 
 def command_clean(cmd):
