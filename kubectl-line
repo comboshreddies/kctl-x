@@ -22,6 +22,7 @@ PIPE_NSED_IN = "pipe-nsed-in"
 PIPE_KIND_IN = "pipe-kind-in"
 PIPE_NAME_IN = "pipe-name-in"
 PIPE_NOTE_IN = "pipe-note-in"
+PIPE_OO_IN = "pipe-oo_in"
 P_UNKNOWN = "_unknown_"
 P_DEFAULT = "_default_"
 P_WARNING = "warning"
@@ -393,7 +394,7 @@ def available_plugins():
 def set_pipe_input():
     """initialize p_in, pipe in structure"""
     p = {}
-    for i in ["format", "ctx", "cmd", "kind", "nsed", "name", "ns", "get", "obj", "kc"]:
+    for i in ["format", "ctx", "cmd", "kind", "nsed", "name", "ns", "get", "obj", "kc", "oo"]:
         p[i] = P_UNKNOWN
     return p
 
@@ -401,7 +402,7 @@ def set_pipe_input():
 def set_cmd_input():
     """initialize cmd input structure"""
     cmd = {}
-    for i in ["ctx", "ns", "kind", "name", "kc"]:
+    for i in ["ctx", "ns", "kind", "name", "kc", "oo"]:
         cmd[i] = P_UNKNOWN
     return cmd
 
@@ -426,6 +427,8 @@ def detect_in_plugin_content(pin, line):
             pin["nsed"] = line[len(PIPE_NSED_IN) + 2: -1]
         elif line.startswith(f"{PIPE_KC_IN}: "):
             pin["kc"] = line[len(PIPE_KC_IN) + 2: -1]
+        elif line.startswith(f"{PIPE_OO_IN}: "):
+            pin["oo"] = line[len(PIPE_OO_IN) + 2: -1]
         elif pin["cmd"] == "get" and line.startswith(f"{PIPE_OPT_IN}: "):
             if "opt" in pin:
                 pin["opt"] += line[len(PIPE_OPT_IN) + 2: -1]
@@ -493,17 +496,29 @@ def fetch_kubectl_options():
         sys.exit(11)
     command_output = result.stdout
     lines = command_output.split("\n")
-    opt_list = []
+    opt_dict = {}
     for line in lines:
         left_part = line.split(":")[0]
         words = left_part.split()
         if len(words) > 0 and words[0][0] == "-":
             for word in words:
+                short_present = ''
                 if word[0] == "-" and word[0:2] != "--" and word[-1] == ",":
-                    opt_list.append(word[:-1])
+                    opt_dict[word[0:-1]] = ''
+                    short_present = word[0:-1]
                 if word[0:2] == "--" and "=" in word:
-                    opt_list.append(word[: word.index("=")])
-    return opt_list
+                    left_part = word[: word.index("=")]
+                    right_part = word[word.index("=")+1:]
+                    if "''" == right_part:
+                        right_part = ""
+                    else:
+                        split_right = right_part.split("'")
+                        if len(split_right) > 2:
+                            right_part = right_part.split("'")[1]
+                    opt_dict[left_part] = right_part
+                    if short_present:
+                        opt_dict[short_present] = right_part
+    return opt_dict
 
 
 def fetch_kubectl_cmds():
@@ -732,21 +747,37 @@ def extract_args(args, cmd, kctl_opts):
         if args[i] in kctl_opts:
             if args[i] in ["-n", "--namespace"] and len(args) > i + 1:
                 cmd["ns"] = args[i + 1]
-            if args[i] == "--context" and len(args) > i + 1:
+            elif args[i] == "--context" and len(args) > i + 1:
                 cmd["ctx"] = args[i + 1]
-            if args[i] == "--kubeconfig" and len(args) > i + 1:
+            elif args[i] == "--kubeconfig" and len(args) > i + 1:
                 cmd["kc"] = args[i + 1]
-            i += 2
+            else:
+                if cmd["oo"] == P_UNKNOWN:
+                    if kctl_opts[args[i]] == "false":
+                        cmd["oo"] = args[i]
+                    else:
+                        cmd["oo"] = args[i] + " " + args[i + 1]
+                else:
+                    if kctl_opts[args[i]] == "false":
+                        cmd["oo"] += " " + args[i]
+                    else:
+                        cmd["oo"] += " " + args[i] + " " + args[i + 1]
+            if kctl_opts[args[i]] == "false":
+                i += 1
+            else:
+                i += 2
             continue
         if "=" in args[i][:-1]:
             eq_index = args[i][:-1].index("=")
             if args[i][:eq_index] in kctl_opts:
                 if args[i][:eq_index] in ["-n", "--namespace"]:
                     cmd["ns"] = args[i][eq_index + 1]
-                if args[i][:eq_index] == "--context":
+                elif args[i][:eq_index] == "--context":
                     cmd["ctx"] = args[i][eq_index + 1]
-                if args[i][:eq_index] == "--kubeconfig":
+                elif args[i][:eq_index] == "--kubeconfig":
                     cmd["kc"] = args[i][eq_index + 1]
+                else:
+                    cmd["oo"] + " " + args[i]
             i += 1
             continue
         if len(args[i]) > 1 and args[i][1] == "-":
@@ -770,91 +801,121 @@ def extract_args(args, cmd, kctl_opts):
 
 def generate_to_exec(p_in, to_check):
     """generates kubectl line based on available data"""
-    if p_in["ctx"] == P_UNKNOWN:  # no ctx
-        if p_in["kc"] == P_UNKNOWN:  # no ctx, kc
-            if p_in["nsed"] == "false":  # no ctx, no kc, no nsed
-                to_exec = to_check.replace(" _", "")
-            else:  # nsed true
-                to_exec = to_check.replace(" _ ", " {{?x:ns}} ")
-                to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
-                if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
-                    to_exec = to_exec.replace("{{?x:ns}}", "-n " + p_in["ns"])
-                    to_exec = to_exec.replace("{{?ns}}", p_in["ns"])
-                    to_exec = to_exec.replace("{{ns}}", p_in["ns"])
-                else:
-                    to_exec = to_exec.replace("{{?x:ns}}", "")
-                    to_exec = to_exec.replace("{{?ns}}", "")
-        else:  # no ctx, kc
-            if p_in["nsed"] == "false":
-                to_exec = to_check.replace(" _ ", " {{?x:kc}} ")
-                to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
-                to_exec = to_exec.replace("{{?:kc}}",  p_in["kc"])
-                to_exec = to_exec.replace("{{kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{?x:ns}}", "")
-                to_exec = to_exec.replace("{{?:ns}}", "")
-                to_exec = to_exec.replace("{{?x:ctx}}", "")
-                to_exec = to_exec.replace("{{?:ctx}}", "")
-            else:  # no ctx, kc, nsed true
-                to_exec = to_check.replace(" _ ", " {{?x:kc}} {{?x:cns}} ")
-                to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
-                to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
-                to_exec = to_exec.replace("{{?:kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{?x:ctx}}", "")
-                to_exec = to_exec.replace("{{?:ctx}}", "")
-                if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
-                    to_exec = to_exec.replace("{{?x:ns}}", " -n " + p_in["ns"])
-                    to_exec = to_exec.replace("{{?:ns}}", p_in["ns"])
-                    to_exec = to_exec.replace("{{ns}}", p_in["ns"])
-                else:
-                    to_exec = to_exec.replace("{{?x:ns}}", "")
-                    to_exec = to_exec.replace("{{?:ns}}", "")
-    else:  # ctx
-        if p_in["kc"] == P_UNKNOWN:  # ctx, no kc
-            if p_in["nsed"] in ["false", P_UNKNOWN]:  # ctx, no kc, no nsed
-                to_exec = to_check.replace(" _ ", " {{?x:ctx}} ")
-                to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
-                to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
-                to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
-            else:  # ctx, no kc, nsed true
-                to_exec = to_check.replace(" _ ", " {{?x:ctx}} {{?x:ns}} ")
-                to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
-                to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
-                to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
-                to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
-                if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
-                    to_exec = to_exec.replace("{{?x:cns}}", " -n " + p_in["ns"])
-                    to_exec = to_exec.replace("{{?:ns}}", p_in["ns"])
-                    to_exec = to_exec.replace("{{ns}}", p_in["ns"])
-                else:
-                    to_exec = to_exec.replace("{{?x:cns}}", "")
-                    to_exec = to_exec.replace("{{?:ns}}", "")
-        else:  # ctx, kc
-            if p_in["nsed"] in ["false", P_UNKNOWN]:
-                to_exec = to_check.replace(" _ ", " {{?x:kc}} {{?x:ctx}} ")
-                to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
-                to_exec = to_exec.replace("{{?:kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
-                to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
-                to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
-            else:
-                to_exec = to_check.replace(" _ ", " {{?x:kc}} {{?x:ctx}} {{?x:ns}} ")
-                to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
-                to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
-                to_exec = to_exec.replace("{{?:kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{kc}}", p_in["kc"])
-                to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
-                to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
-                to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
-                if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
-                    to_exec = to_exec.replace("{{?x:ns}}", " -n " + p_in["ns"])
-                    to_exec = to_exec.replace("{{?:ns}}", p_in["ns"])
-                    to_exec = to_exec.replace("{{ns}}", p_in["ns"])
-                else:
-                    to_exec = to_exec.replace("{{?x:ns}}", "")
-                    to_exec = to_exec.replace("{{?:ns}}", "")
-    return to_exec
+    if p_in["oo"] != P_UNKNOWN:
+        to_check =  to_check.replace(" _ ",  " " + p_in["oo"] + " _ ")
+    if p_in["kc"] != P_UNKNOWN:
+        to_check = to_check.replace(" _ ", " {{?x:kc}} _ ")
+        to_check = to_check.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
+        to_check = to_check.replace("{{?:kc}}", p_in["kc"])
+        to_check = to_check.replace("{{kc}}", p_in["kc"])
+    else:
+        to_check = to_check.replace("{{?x:kc}}", "")
+        to_check = to_check.replace("{{?:kc}}", "")
+    if p_in["ctx"] != P_UNKNOWN:
+        to_check = to_check.replace(" _ ", " {{?x:ctx}} _ ")
+        to_check = to_check.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
+        to_check = to_check.replace("{{?:ctx}}", p_in["ctx"])
+        to_check = to_check.replace("{{ctx}}", p_in["ctx"])
+    else:
+        to_check = to_check.replace("{{?x:ctx}}", "")
+        to_check = to_check.replace("{{?:ctx}}", "")
+    if p_in["nsed"] != P_UNKNOWN:
+        to_check = to_check.replace("{{nsed}}", p_in["nsed"])
+    if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
+        to_check = to_check.replace(" _ ", " {{?x:ns}} _ ")
+        to_check = to_check.replace("{{?x:ns}}", " -n " + p_in["ns"])
+        to_check = to_check.replace("{{?:ns}}", p_in["ns"])
+        to_check = to_check.replace("{{ns}}", p_in["ns"])
+    else:
+        to_check = to_check.replace("{{?x:ns}}", "")
+        to_check = to_check.replace("{{?:ns}}", "")
+    to_check = to_check.replace(" _ ", " ")
+    # if p_in["ctx"] == P_UNKNOWN:  # no ctx
+    #     if p_in["kc"] == P_UNKNOWN:  # no ctx, kc
+    #         if p_in["nsed"] == "false":  # no ctx, no kc, no nsed
+    #             to_exec = to_check.replace(" _", "")
+    #         else:  # nsed true
+    #             to_exec = to_check.replace(" _ ", " {{?x:ns}} ")
+    #             to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
+    #             if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
+    #                 to_exec = to_exec.replace("{{?x:ns}}", "-n " + p_in["ns"])
+    #                 to_exec = to_exec.replace("{{?ns}}", p_in["ns"])
+    #                 to_exec = to_exec.replace("{{ns}}", p_in["ns"])
+    #             else:
+    #                 to_exec = to_exec.replace("{{?x:ns}}", "")
+    #                 to_exec = to_exec.replace("{{?ns}}", "")
+    #     else:  # no ctx, kc
+    #         if p_in["nsed"] == "false":
+    #             to_exec = to_check.replace(" _ ", " {{?x:kc}} ")
+    #             to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
+    #             to_exec = to_exec.replace("{{?:kc}}",  p_in["kc"])
+    #             to_exec = to_exec.replace("{{kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{?x:ns}}", "")
+    #             to_exec = to_exec.replace("{{?:ns}}", "")
+    #             to_exec = to_exec.replace("{{?x:ctx}}", "")
+    #             to_exec = to_exec.replace("{{?:ctx}}", "")
+    #         else:  # no ctx, kc, nsed true
+    #             to_exec = to_check.replace(" _ ", " {{?x:kc}} {{?x:cns}} ")
+    #             to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
+    #             to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
+    #             to_exec = to_exec.replace("{{?:kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{?x:ctx}}", "")
+    #             to_exec = to_exec.replace("{{?:ctx}}", "")
+    #             if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
+    #                 to_exec = to_exec.replace("{{?x:ns}}", " -n " + p_in["ns"])
+    #                 to_exec = to_exec.replace("{{?:ns}}", p_in["ns"])
+    #                 to_exec = to_exec.replace("{{ns}}", p_in["ns"])
+    #             else:
+    #                 to_exec = to_exec.replace("{{?x:ns}}", "")
+    #                 to_exec = to_exec.replace("{{?:ns}}", "")
+    # else:  # ctx
+    #     if p_in["kc"] == P_UNKNOWN:  # ctx, no kc
+    #         if p_in["nsed"] in ["false", P_UNKNOWN]:  # ctx, no kc, no nsed
+    #             to_exec = to_check.replace(" _ ", " {{?x:ctx}} ")
+    #             to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
+    #             to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
+    #             to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
+    #         else:  # ctx, no kc, nsed true
+    #             to_exec = to_check.replace(" _ ", " {{?x:ctx}} {{?x:ns}} ")
+    #             to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
+    #             to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
+    #             to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
+    #             to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
+    #             if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
+    #                 to_exec = to_exec.replace("{{?x:cns}}", " -n " + p_in["ns"])
+    #                 to_exec = to_exec.replace("{{?:ns}}", p_in["ns"])
+    #                 to_exec = to_exec.replace("{{ns}}", p_in["ns"])
+    #             else:
+    #                 to_exec = to_exec.replace("{{?x:cns}}", "")
+    #                 to_exec = to_exec.replace("{{?:ns}}", "")
+    #     else:  # ctx, kc
+    #         if p_in["nsed"] in ["false", P_UNKNOWN]:
+    #             to_exec = to_check.replace(" _ ", " {{?x:kc}} {{?x:ctx}} ")
+    #             to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
+    #             to_exec = to_exec.replace("{{?:kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
+    #             to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
+    #             to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
+    #         else:
+    #             to_exec = to_check.replace(" _ ", " {{?x:kc}} {{?x:ctx}} {{?x:ns}} ")
+    #             to_exec = to_exec.replace("{{nsed}}", p_in["nsed"])
+    #             to_exec = to_exec.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
+    #             to_exec = to_exec.replace("{{?:kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{kc}}", p_in["kc"])
+    #             to_exec = to_exec.replace("{{?x:ctx}}", "--context " + p_in["ctx"])
+    #             to_exec = to_exec.replace("{{?:ctx}}", p_in["ctx"])
+    #             to_exec = to_exec.replace("{{ctx}}", p_in["ctx"])
+    #             if p_in["ns"] != P_UNKNOWN and p_in["ns"] != "<none>":
+    #                 to_exec = to_exec.replace("{{?x:ns}}", " -n " + p_in["ns"])
+    #                 to_exec = to_exec.replace("{{?:ns}}", p_in["ns"])
+    #                 to_exec = to_exec.replace("{{ns}}", p_in["ns"])
+    #             else:
+    #                 to_exec = to_exec.replace("{{?x:ns}}", "")
+    #                 to_exec = to_exec.replace("{{?:ns}}", "")
+    #return to_exec
+    return to_check
 
 
 def command_api_r_in_pipe(command, args, cmd):
@@ -877,6 +938,10 @@ def command_api_r_in_pipe(command, args, cmd):
             stream_helper()
             break
         if p_in["cmd"] in ["kc-inject", P_UNKNOWN]:  # command cgc, in kc-inject
+            print(p_in["cmd"])
+            print(p_in["format"])
+            print(p_in)
+            print("->" + line + "<-")
             if p_in["format"] == P_DEFAULT:
                 if line_num == 0 and line.isupper():
                     line_num += 1
@@ -892,6 +957,8 @@ def command_api_r_in_pipe(command, args, cmd):
                 l_print_t(PIPE_CMD_IN, "config_get-contexts")
                 if content["FILE"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{content['FILE']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 pass_output_format(args)
             exec_args = ["kubectl"]
             if content["FILE"] != P_UNKNOWN:
@@ -926,6 +993,8 @@ def command_api_r_in_pipe(command, args, cmd):
                     l_print_t(PIPE_NS_IN, f"{cmd['ns']}")
                 if p_in["kc"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 pass_output_format(args)
                 l_print_t(PIPE_NOTE_IN, "appending --verbs=get,list")
                 to_exec = to_exec + " --verbs=get,list"
@@ -965,6 +1034,8 @@ def command_api_r_in_pipe(command, args, cmd):
                     l_print_t(PIPE_CTX_IN, f"{p_in['ctx']}")
                 if p_in["kc"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 pass_output_format(args)
                 l_print_t(PIPE_NOTE_IN, "appending --verbs=get,list")
                 to_exec = to_exec + " --verbs=get,list"
@@ -988,6 +1059,10 @@ def command_api_r(command, args, cmd, extracted_args_position):
                 l_print_t(PIPE_NS_IN, f"{cmd['ns']}")
             if cmd["kind"] != P_UNKNOWN:
                 l_print_t(PIPE_KIND_IN, f"{cmd['kind']}")
+            if cmd["oo"] != P_UNKNOWN:
+                l_print_t(PIPE_OO_IN, f"{cmd['oo']}")
+            if cmd["kc"] != P_UNKNOWN:
+                l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
             if cmd["name"] != P_UNKNOWN:
                 l_print_t(PIPE_NAME_IN, f"{cmd['name']}")
             pass_output_format(args)
@@ -998,7 +1073,7 @@ def command_api_r(command, args, cmd, extracted_args_position):
         system_exec(" ".join(exec_args))
 
 
-def command_cgc_pipe_in(command, args):
+def command_cgc_pipe_in(command, args, cmd):
     """command  config get-context pipe in handler"""
     position = []
     content = {}
@@ -1033,6 +1108,11 @@ def command_cgc_pipe_in(command, args):
                 l_print_t(PIPE_CMD_IN, "config_get-contexts")
                 if content["FILE"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{content['FILE']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
+                else:
+                    if cmd["oo"] != P_UNKNOWN:
+                        l_print_t(PIPE_OO_IN, f"{cmd['oo']}")
                 pass_output_format(args)
             exec_args = ["kubectl"]
             if command == "cgc":
@@ -1040,7 +1120,7 @@ def command_cgc_pipe_in(command, args):
                     exec_args += ["--kubeconfig", content["FILE"], "config", "get-contexts",]
                 else:
                     exec_args += ["config", "get-contexts"]
-                exec_args += args[2:]
+                #exec_args += args[2:]
             else:
                 if content["FILE"] != P_UNKNOWN:
                     exec_args += ["--kubeconfig", content["FILE"]]
@@ -1048,16 +1128,21 @@ def command_cgc_pipe_in(command, args):
             system_exec(" ".join(exec_args))
 
 
-def command_cgc(command, args):
+def command_cgc(command, args, cmd):
     """command config get-contexts handler"""
     if detect_input() == "fifo":
-        command_cgc_pipe_in(command, args)
+        command_cgc_pipe_in(command, args, cmd)
     else:
         if detect_output() == "pipe":
             l_print_t(PIPE_CMD_IN, "config_get-contexts")
+            if cmd["oo"] != P_UNKNOWN:
+                l_print_t(PIPE_OO_IN, f"{cmd['oo']}")
             pass_output_format(args)
         if command == "cgc":
-            exec_args = ["kubectl"] + ["config", "get-contexts"] + args[2:]
+            if cmd["oo"] != P_UNKNOWN:
+                exec_args = ["kubectl", cmd["oo"], "config", "get-contexts"]
+            else:
+                exec_args = ["kubectl", "config", "get-contexts"]
         else:
             exec_args = ["kubectl"] + args[1:]
         system_exec(" ".join(exec_args))
@@ -1073,11 +1158,11 @@ def command_kc_inject(command, args, extracted_args_position):
             l_print_t(PIPE_OPT_IN, " ".join(args[extracted_args_position[2]:]))
         pass_output_format(args)
         out_list = []
-        for i in args[2:]:
+        for i in args[extracted_args_position[2]:]:
             if os.path.exists(i):
                 out_list.append(i)
             else:
-                l_print_e(P_WARNING, f"file {i} does note exist")
+                l_print_e(P_WARNING, f"file {i} does not exist")
         if out_list:
             print("FILE")
         for i in out_list:
@@ -1173,6 +1258,8 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
                 l_print_t(PIPE_CMD_IN, "config_get-contexts")
                 if content["FILE"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{content['FILE']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 pass_output_format(args)
             exec_args = ["kubectl"]
             if content["FILE"] != P_UNKNOWN:
@@ -1369,6 +1456,8 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
                     prev_p_in["kind"] = p_in["kind"]
                 if p_in["kc"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 if get_flags:
                     l_print_t(PIPE_OPT_IN, f"{get_flags}")
                 pass_output_format(
@@ -1460,6 +1549,8 @@ def command_others(command, args, cmd, extracted_args_position, get_flags, plugi
                 l_print_t(PIPE_NS_IN, f"{cmd['ns']}")
             if cmd["kc"] != P_UNKNOWN:
                 l_print_t(PIPE_KC_IN, f"{cmd['kc']}")
+            if cmd["oo"] != P_UNKNOWN:
+                l_print_t(PIPE_OO_IN, f"{cmd['oo']}")
             if get_flags:
                 l_print_t(PIPE_OPT_IN, f"{get_flags}")
             pass_output_format(args)
@@ -1524,6 +1615,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                 l_print_t(PIPE_CMD_IN, "config_get-contexts")
                 if content["FILE"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{content['FILE']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 pass_output_format(args)
             exec_args = ["kubectl"]
             if content["FILE"] != P_UNKNOWN:
@@ -1580,6 +1673,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                     prev_p_in["kind"] = p_in["kind"]
                 if p_in["kc"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 if get_flags:
                     l_print_t(PIPE_OPT_IN, f"{get_flags}")
             to_exec = replace_exec_line_with_content(to_exec, content)
@@ -1695,6 +1790,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                     prev_p_in["kind"] = p_in["kind"]
                 if p_in["kc"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 if get_flags:
                     l_print_t(PIPE_OPT_IN, f"{get_flags}")
                 exec_words = to_exec.split()
@@ -1789,6 +1886,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                     prev_p_in["kind"] = p_in["kind"]
                 if p_in["kc"] != P_UNKNOWN:
                     l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                if p_in["oo"] != P_UNKNOWN:
+                    l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
                 if get_flags:
                     l_print_t(PIPE_OPT_IN, f"{get_flags}")
                 pass_output_format(
@@ -1878,6 +1977,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
                 prev_p_in["kind"] = p_in["kind"]
             if p_in["kc"] != P_UNKNOWN:
                 l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+            if p_in["oo"] != P_UNKNOWN:
+                l_print_t(PIPE_OO_IN, f"{p_in['oo']}")
             if get_flags:
                 l_print_t(PIPE_OPT_IN, f"{get_flags}")
             exec_words = to_exec.split()
@@ -1910,6 +2011,8 @@ def command_kctl_generators(command, args, cmd, extracted_args_position, get_fla
                 l_print_t(PIPE_NS_IN, f"{cmd['ns']}")
             if cmd["kc"] != P_UNKNOWN:
                 l_print_t(PIPE_KC_IN, f"{cmd['kc']}")
+            if cmd["oo"] != P_UNKNOWN:
+                l_print_t(PIPE_OO_IN, f"{cmd['oo']}")
             if get_flags:
                 l_print_t(PIPE_OPT_IN, f"{get_flags}")
             pass_output_format(args)
@@ -2498,7 +2601,7 @@ def main_loop(args):
         return -2
 
     if (command == "config" and cmd["kind"] == "get-contexts") or command == "cgc":  # generator
-        command_cgc(command, args)
+        command_cgc(command, args, cmd)
     elif command == "kc-inject":  # generator
         command_kc_inject(command, args, extracted_args_position)
     elif command in ["+", "-"]:  # filter
