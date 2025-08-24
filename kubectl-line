@@ -508,7 +508,7 @@ def fetch_kubectl_options():
                     short_present = word[0:-1]
                 if word[0:2] == "--" and "=" in word:
                     left_part = word[: word.index("=")]
-                    right_part = word[word.index("=")+1:]
+                    right_part = word[word.index("=") + 1:]
                     if "''" == right_part:
                         right_part = ""
                     else:
@@ -1277,8 +1277,8 @@ def command_others_pipe_in(command, args, extracted_args_position, get_flags):
             to_exec = generate_to_exec(p_in, to_check)
             # if more than one event like kctl api-resource apears,
             # like EventSomething, this will not work, we need split by , and for each
-            if ("event" in p_in["kind"].lower() and "NAME" not in content and
-                    p_in["name"] == P_UNKNOWN):
+            if ("event" in p_in["kind"].lower() and "NAME" not in content
+                    and p_in["name"] == P_UNKNOWN):
                 # skip multiple get of events, as they are non selectable by name
                 if line_num > 2:
                     continue
@@ -1675,8 +1675,8 @@ def command_kctl_generators_pipe_in(command, args, extracted_args_position, get_
             else:
                 to_check = " ".join(["kubectl"] + args[1:])
             to_exec = generate_to_exec(p_in, to_check)
-            if ("event" in p_in["kind"].lower() and p_in["cmd"] == "get" and
-                    p_in["name"] == P_UNKNOWN):
+            if ("event" in p_in["kind"].lower() and p_in["cmd"] == "get"
+                    and p_in["name"] == P_UNKNOWN):
                 if line_num > 2:
                     continue
                 to_exec = to_exec.replace("{{name}}", "")  # there is no name
@@ -2137,8 +2137,8 @@ def command_question(args):
                 # role,and more complex types
                 reg = r"([a-z][a-z0-9-.]+)[:|/]*([a-z0-9-.]+)[:|/]*([a-z0-9-.]*)"
                 match = re.match(reg, to_check)
-                if (match and match.group(0) and
-                        "CPU" not in column_to_inspect
+                if (match and match.group(0)
+                        and "CPU" not in column_to_inspect
                         and "MEMORY" not in column_to_inspect):
                     value[0] = match.group(0)
                     value[1] = match.group(1)
@@ -2249,8 +2249,8 @@ def command_question(args):
                         value[2] = match.group(2)
                         value[3] = match.group(3)
                         value[4] = match.group(4)
-                        value['int'] = (((int(value['1']) * 256 + int(value['2'])) * 256 +
-                                         int(value['3']) * 256 + int(value['4'])))
+                        value['int'] = (((int(value['1']) * 256 + int(value['2'])) * 256
+                                         + int(value['3']) * 256 + int(value['4'])))
                         q_type = 'IP'
                         skip = True
             if not skip:
