@@ -777,7 +777,7 @@ def extract_args(args, cmd, kctl_opts):
                 elif args[i][:eq_index] == "--kubeconfig":
                     cmd["kc"] = args[i][eq_index + 1]
                 else:
-                    cmd["oo"] + " " + args[i]
+                    cmd["oo"] += " " + args[i]
             i += 1
             continue
         if len(args[i]) > 1 and args[i][1] == "-":
@@ -802,7 +802,7 @@ def extract_args(args, cmd, kctl_opts):
 def generate_to_exec(p_in, to_check):
     """generates kubectl line based on available data"""
     if p_in["oo"] != P_UNKNOWN:
-        to_check =  to_check.replace(" _ ",  " " + p_in["oo"] + " _ ")
+        to_check = to_check.replace(" _ ", " " + p_in["oo"] + " _ ")
     if p_in["kc"] != P_UNKNOWN:
         to_check = to_check.replace(" _ ", " {{?x:kc}} _ ")
         to_check = to_check.replace("{{?x:kc}}", "--kubeconfig " + p_in["kc"])
@@ -977,7 +977,7 @@ def command_api_r(command, args, cmd, extracted_args_position):
             if cmd["oo"] != P_UNKNOWN:
                 l_print_t(PIPE_OO_IN, f"{cmd['oo']}")
             if cmd["kc"] != P_UNKNOWN:
-                l_print_t(PIPE_KC_IN, f"{p_in['kc']}")
+                l_print_t(PIPE_KC_IN, f"{cmd['kc']}")
             if cmd["name"] != P_UNKNOWN:
                 l_print_t(PIPE_NAME_IN, f"{cmd['name']}")
             pass_output_format(args)
@@ -1035,7 +1035,6 @@ def command_cgc_pipe_in(command, args, cmd):
                     exec_args += ["--kubeconfig", content["FILE"], "config", "get-contexts",]
                 else:
                     exec_args += ["config", "get-contexts"]
-                #exec_args += args[2:]
             else:
                 if content["FILE"] != P_UNKNOWN:
                     exec_args += ["--kubeconfig", content["FILE"]]
@@ -2018,9 +2017,10 @@ def command_unknown(command, args):
 
 
 def q_evaluate(op1, op2, operator):
+    """evaluate operator, and operands"""
     q_check = False
-    if type(op1) != type(op2):
-        l_print_e(P_WARNING, f"> input types are not same")
+    if type(op1) is type(op2):
+        l_print_e(P_WARNING, f" input types are not same: {type(op1)} != {type(op2)}")
         return False
     if operator == 'eq' and op1 == op2:
         q_check = True
@@ -2035,9 +2035,9 @@ def q_evaluate(op1, op2, operator):
     if operator == 'ge' and op1 >= op2:
         q_check = True
     if operator == 're':
-        if type(op1) != str:
+        if not isinstance(op1, str):
             op1 = str(op1)
-        if type(op2) != str:
+        if not isinstance(op2, str):
             op2 = str(op2)
         match = re.search(op2, op1)
         if match and match.group(0):
@@ -2054,18 +2054,20 @@ def command_question(args):
     columns = []
     line_num = 0
     header_line = ""
-    if not ( (len(args) == 4 and args[3] == "??") or (len(args) == 3 and args[2] == "??") ):
-        if len(args) < 4 :
+    if not ((len(args) == 4 and args[3] == "??") or (len(args) == 3 and args[2] == "??")):
+        if len(args) < 4:
             l_print_e(P_WARNING, f"filter format is ? COLUMN_NAME #<n> operator #<n>|value {args}")
             return
         if args[1] != '?':
-            l_print_e(P_WARNING, f"filter format is ? COLUMN_NAME #<n> operator #<n>|value {len(args)}")
+            l_print_e(P_WARNING, "filter format is ? COLUMN_NAME"
+                      f"#<n> operator #<n>|value {len(args)}"
+                      )
             return
     column_to_inspect = args[2]
     q_operator = ""
     q_operand1 = ""
     q_operand2 = ""
-    if len(args) == 6 :
+    if len(args) == 6:
         q_operator = args[4]
         q_operand1 = args[3]
         q_operand2 = args[5]
@@ -2077,7 +2079,7 @@ def command_question(args):
                 print(line, end="")
             line_num = 0
             continue
-        if line_num == 0 :
+        if line_num == 0:
             line_num += 1
             modified_line = line.upper()
             modified_line = modified_line.replace("(", "_")
@@ -2087,40 +2089,39 @@ def command_question(args):
                 position, columns = read_header_line(modified_line)
                 header_line = line
                 continue
-            else:
-                l_print_e(P_DEBUG,f"unrecognized headers")
-                break
+            l_print_e(P_DEBUG, "unrecognized headers")
+            break
         value = {}
         content = read_row_from_line(position, columns, line)
         line_num += 1
         skip = False
         parse_debug = False
         if (len(args) == 4 and args[3] == "??") or (len(args) == 3 and args[2] == "??"):
-            l_print_e("debug?",f"line content: {content}")
+            l_print_e("debug?", f"line content: {content}")
             parse_debug = True
         if column_to_inspect not in columns:
             for i in columns:
-                if re.match(f".*{column_to_inspect}.*",i):
+                if re.match(f".*{column_to_inspect}.*", i):
                     column_to_inspect = i
                     break
         if column_to_inspect in content:
             to_check = content[column_to_inspect]
             q_type = P_UNKNOWN
             # age like format
-            match = re.match( r"^(\d+)$", to_check)
+            match = re.match(r"^(\d+)$", to_check)
             if match and match.group(0):
                 value[0] = match.group(0)
                 value[1] = int(match.group(1))
                 q_type = "NUMBER"
                 skip = True
             if not skip:
-                match = re.match( r"^([a-zA-Z]+)$", to_check)
+                match = re.match(r"^([a-zA-Z]+)$", to_check)
                 if match and match.group(0):
                     value[0] = match.group(0)
                     q_type = "WORD"
                     skip = True
             if not skip:
-                match = re.match( r"^(\d+)(\.)*(\d*)$", to_check)
+                match = re.match(r"^(\d+)(\.)*(\d*)$", to_check)
                 if match and match.group(0):
                     value[0] = match.group(0)
                     value[1] = float(match.group(0))
@@ -2134,8 +2135,11 @@ def command_question(args):
                     skip = True
             if not skip:
                 # role,and more complex types
-                match = re.match(r"([a-z][a-z0-9-.]+)[:|/]*([a-z0-9-.]+)[:|/]*([a-z0-9-.]*)", to_check)
-                if match and match.group(0) and "CPU" not in column_to_inspect and "MEMORY" not in column_to_inspect:
+                reg = r"([a-z][a-z0-9-.]+)[:|/]*([a-z0-9-.]+)[:|/]*([a-z0-9-.]*)"
+                match = re.match(reg, to_check)
+                if (match and match.group(0) and
+                        "CPU" not in column_to_inspect
+                        and "MEMORY" not in column_to_inspect):
                     value[0] = match.group(0)
                     value[1] = match.group(1)
                     value[2] = match.group(2)
@@ -2145,7 +2149,7 @@ def command_question(args):
                     skip = True
             if not skip:
                 match = re.match(r"(\d+d)*(\d+h)*(\d+m)*(\d+s)*", to_check)
-                if match and match.group(0) and "CPU" not in column_to_inspect :
+                if match and match.group(0) and "CPU" not in column_to_inspect:
                     days = 0
                     hours = 0
                     minutes = 0
@@ -2192,10 +2196,10 @@ def command_question(args):
                     value['S'] = int(match.group(6))
                     q_type = 'DATE'
                     skip = True
-            if not skip :
+            if not skip:
                 # NodeMetrics WINDOW
                 match = re.match(r"(\d+d)*(\d+h)*(\d+m)*((\d*.)*\d+s)*", to_check)
-                if match and match.group(0) and "CPU" not in column_to_inspect :
+                if match and match.group(0) and "CPU" not in column_to_inspect:
                     days = int(match.group(1)[:-1])
                     hours = int(match.group(2)[:-1])
                     minutes = int(match.group(3)[:-1])
@@ -2205,10 +2209,10 @@ def command_question(args):
                     skip = True
             if not skip:
                 # restarts like format '2 (5d ago)'
-                match = re.match(r"^(\d+)( \((\d+)[y|d|h|m|s]{1} ago\))*$",to_check)
+                match = re.match(r"^(\d+)( \((\d+)[y|d|h|m|s]{1} ago\))*$", to_check)
                 if match and match.group(0):
-                    value[0] = match.group(0) # restarts
-                    value['str'] = match.group(0) # full string
+                    value[0] = match.group(0)  # restarts
+                    value['str'] = match.group(0)  # full string
                     value['int'] = int(match.group(1))
                     value[1] = int(match.group(1))
                     val3 = match.group(3)
@@ -2232,8 +2236,10 @@ def command_question(args):
                     skip = True
             if not skip:
                 # ip address
+                reg = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"
+                reg += "(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
                 match = re.match(
-                    r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+                    reg,
                     to_check)
                 if match and match.group(0):
                     match = re.match(r"^(\d+).(\d+).(\d+).(\d+)$", to_check)
@@ -2243,12 +2249,16 @@ def command_question(args):
                         value[2] = match.group(2)
                         value[3] = match.group(3)
                         value[4] = match.group(4)
-                        value['int'] = (((int(value['1'])*256+ int(value['2']))*256 + int(value['3'])*256 + int(value['4'])))
+                        value['int'] = (((int(value['1']) * 256 + int(value['2'])) * 256 +
+                                         int(value['3']) * 256 + int(value['4'])))
                         q_type = 'IP'
                         skip = True
             if not skip:
                 # ip address : port
-                match = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?)$", to_check)
+                reg = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"
+                reg += "(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?):"
+                reg += "(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?)$"
+                match = re.match(reg, to_check)
                 if match and match.group(0):
                     match = re.match(r"^(\d+).(\d+).(\d+).(\d+):(\d+)$", to_check)
                     if match and match.group(0):
@@ -2262,9 +2272,10 @@ def command_question(args):
                         skip = True
             if not skip:
                 # PORTS 443/TCP
-                match = re.match( r"(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?):(\w+)$", to_check)
+                reg = r"(?:6[0-5][0-5][0-3][0-5]|[0-5]?[0-9]?[0-9]?[0-9][0-9]?):(\w+)$"
+                match = re.match(reg, to_check)
                 if match and match.group(0):
-                    match = re.match( r"(\d+)/(\w+)", to_check)
+                    match = re.match(r"(\d+)/(\w+)", to_check)
                     value[0] = match.group(0)
                     value[1] = match.group(1)
                     value[2] = match.group(2)
@@ -2288,20 +2299,20 @@ def command_question(args):
                     value[2] = match.group(2)
                     part1 = int(match.group(1))
                     part2 = match.group(2)
-                    bytes = 0
+                    n_bytes = 0
                     if part2 == 'Ki':
-                        bytes = 1024 * part1
+                        n_bytes = 1024 * part1
                     if part2 == 'Mi':
-                        bytes = 1024 * 1024 * part1
+                        n_bytes = 1024 * 1024 * part1
                     if part2 == 'Gi':
-                        bytes = 1024 * 1024 * 1024 * part1
+                        n_bytes = 1024 * 1024 * 1024 * part1
                     if part2 == 'Ti':
-                        bytes = 1024 * 1024 * 1024 * 1024 * part1
+                        n_bytes = 1024 * 1024 * 1024 * 1024 * part1
                     if part2 == 'Pi':
-                        bytes = 1024 * 1024 * 1024 * 1024 * 1024 * part1
+                        n_bytes = 1024 * 1024 * 1024 * 1024 * 1024 * part1
                     if part2 == 'Ei':
-                        bytes = 1024 * 1024 * 1024 * 1024 * 1024 * 1024  * part1
-                    value['int'] = bytes
+                        n_bytes = 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * part1
+                    value['int'] = n_bytes
                     q_type = "MEMORY"
                     skip = True
             if not skip:
@@ -2313,7 +2324,7 @@ def command_question(args):
                     q_type = 'PERCENT'
                     skip = True
             if not skip:
-                match = re.match( r"^(\d+)(m)$", to_check)
+                match = re.match(r"^(\d+)(m)$", to_check)
                 if "CPU" in column_to_inspect and match and match.group(0):
                     value[0] = match.group(0)
                     value[1] = match.group(1)
@@ -2323,36 +2334,37 @@ def command_question(args):
                     else:
                         value['int'] = value['int'] * 1000
                     q_type = "CPU"
-            # TODO 1234e66, but haven't seen one
+            # XTODO 1234e66, but haven't seen one
             if not skip:
-                l_print_e(P_ERROR,f"unknown format of a column {column_to_inspect}, assume string")
+                l_print_e(P_ERROR, f"unknown format of a column {column_to_inspect}, assume string")
                 value[0] = to_check
                 q_type = "STRING"
             if parse_debug:
-                l_print_e("debug?",column_to_inspect)
-                l_print_e("debug?",f"matched fields: {value}")
-                l_print_e("debug?",f"type: {q_type}")
+                l_print_e("debug?", column_to_inspect)
+                l_print_e("debug?", f"matched fields: {value}")
+                l_print_e("debug?", f"type: {q_type}")
                 continue
-            if q_operator not in ['eq','ne','le','ge','gt','lt','?','re']:
+            if q_operator not in ['eq', 'ne', 'le', 'ge', 'gt', 'lt', '?', 're']:
                 l_print_e(P_ERROR, f"unknown operator {q_operator} or not enough args")
             else:
                 if q_operand1[0] != '?' and q_operand2[0] != '?':
-                    l_print_e(P_ERROR, f"at least one operand should be internal ie start with ?")
+                    l_print_e(P_ERROR, "at least one operand should be internal ie start with ?")
                     break
-                elif q_operand1[0] == '?' and q_operand2[0] == '?':
+                if q_operand1[0] == '?' and q_operand2[0] == '?':
                     # internal comparison
-                    q_check = False
-                    # try no guarantee that operand can be converted to int
+                    # XTODO do try no guarantee that operand can be converted to int
                     qo1_idx = int(q_operand1[1:])
                     qo2_idx = int(q_operand2[1:])
                     if qo1_idx in value and qo2_idx in value:
-                        if q_evaluate(value[qo1_idx],value[qo2_idx],q_operator):
+                        if q_evaluate(value[qo1_idx], value[qo2_idx], q_operator):
                             if header_line:
                                 print(header_line, end="")
                                 header_line = ""
                             print(line, end="")
                     else:
-                        l_print_e(P_ERROR, f"no value offset {qo1_idx} or {qo2_idx} in value f{value}")
+                        l_print_e(P_ERROR, f"no value offset {qo1_idx} or"
+                                  f"{qo2_idx} in value f{value}"
+                                  )
                 elif q_operand1[0] == '?' or q_operand2[0] == '?':
                     if q_operand1[0] == '?':
                         internal_operand = q_operand1[1:]
@@ -2360,20 +2372,22 @@ def command_question(args):
                     else:
                         internal_operand = q_operand2[1:]
                         external_operand = q_operand1
-                    if  internal_operand in value:
+                    if internal_operand in value:
                         qo_int = value[internal_operand]
-                    elif re.match(r"^(\d+)$",internal_operand) and int(internal_operand) in value:
+                    elif re.match(r"^(\d+)$", internal_operand) and int(internal_operand) in value:
                         qo_int = value[int(internal_operand)]
                     else:
-                        l_print_e("error?",f"operand {internal_operand} not found in values {value}")
+                        l_print_e("error?", f"operand {internal_operand}"
+                                  f"not found in values {value}"
+                                  )
                         continue
                     test_result = False
-                    if type(qo_int) == int:
+                    if isinstance(qo_int, int):
                         # check if external is int
-                        match = re.match(r"^(\d+)$",external_operand)
+                        match = re.match(r"^(\d+)$", external_operand)
                         if match:
-                            test_result = q_evaluate(qo_int,int(external_operand),q_operator)
-                    elif type(qo_int) == float:
+                            test_result = q_evaluate(qo_int, int(external_operand), q_operator)
+                    elif isinstance(qo_int, float):
                         # check if external is float
                         match = re.match(r"^(\d+).(\d)*$", external_operand)
                         if match:
